@@ -14,13 +14,14 @@ import Messages.ServerResponse;
 
 public class CockroachTaoProcessor extends TaoProcessor {
 
-	private CockroachDao cockroachDao = CockroachDao.getInstance();
+	private CockroachDao cockroachDao;
 
 	public CockroachTaoProcessor(Proxy proxy, Sequencer sequencer, AsynchronousChannelGroup threadGroup,
 			MessageCreator messageCreator, PathCreator pathCreator, CryptoUtil cryptoUtil, Subtree subtree,
-			PositionMap positionMap, Map<Long, Long> relativeMapper, Profiler profiler) {
+			PositionMap positionMap, Map<Long, Long> relativeMapper, Profiler profiler, int cockroachPort) {
 		super(proxy, sequencer, threadGroup, messageCreator, pathCreator, cryptoUtil, subtree, positionMap,
 				relativeMapper, profiler);
+		this.cockroachDao = CockroachDao.getInstance(cockroachPort);
 	}
 
 	@Override

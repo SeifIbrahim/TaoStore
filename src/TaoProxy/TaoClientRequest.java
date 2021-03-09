@@ -7,6 +7,7 @@ import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 
 import java.net.InetSocketAddress;
+import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Objects;
@@ -29,6 +30,9 @@ public class TaoClientRequest implements ClientRequest {
 
     // The address of the client making the request
     protected InetSocketAddress mClientAddress;
+    
+	// Channel that the request came from
+    protected AsynchronousSocketChannel mChannel;
 
     /**
      * @brief Default constructor
@@ -155,4 +159,13 @@ public class TaoClientRequest implements ClientRequest {
         return Objects.hash(mRequestID, mClientAddress.getHostName());
     }
 
+    @Override
+    public void setChannel(AsynchronousSocketChannel channel) {
+        mChannel = channel;
+    }
+    
+    @Override
+    public AsynchronousSocketChannel getChannel() {
+        return mChannel;
+    }
 }

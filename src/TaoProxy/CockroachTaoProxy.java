@@ -13,14 +13,17 @@ import Messages.MessageCreator;
  */
 public class CockroachTaoProxy extends TaoProxy {
 
-	private CockroachDao cockroachDao = CockroachDao.getInstance();
+	private CockroachDao cockroachDao;
 
 	/**
 	 * @param messageCreator
 	 * @param pathCreator
 	 * @param subtree
 	 */
-	public CockroachTaoProxy(MessageCreator messageCreator, PathCreator pathCreator, Subtree subtree) {
+	public CockroachTaoProxy(MessageCreator messageCreator, PathCreator pathCreator, Subtree subtree,
+			int cockroachPort) {
+		cockroachDao = CockroachDao.getInstance(cockroachPort);
+
 		// For trace purposes
 		TaoLogger.logLevel = TaoLogger.LOG_OFF;
 
@@ -54,7 +57,7 @@ public class CockroachTaoProxy extends TaoProxy {
 		// Initialize the sequencer and proxy
 		mSequencer = new TaoSequencer(mMessageCreator, mPathCreator);
 		mProcessor = new CockroachTaoProcessor(this, mSequencer, mThreadGroup, mMessageCreator, mPathCreator,
-				mCryptoUtil, mSubtree, mPositionMap, mRelativeLeafMapper, mProfiler);
+				mCryptoUtil, mSubtree, mPositionMap, mRelativeLeafMapper, mProfiler, cockroachPort);
 	}
 
 	/**
@@ -80,7 +83,7 @@ public class CockroachTaoProxy extends TaoProxy {
 
 			// Encrypt path
 			byte[] dataToWrite = mCryptoUtil.encryptPath(defaultPath);
-
+			
 			this.cockroachDao.writePath(i, dataToWrite);
 		}
 	}
@@ -95,9 +98,16 @@ public class CockroachTaoProxy extends TaoProxy {
 			String configFileName = options.getOrDefault("config_file", TaoConfigs.USER_CONFIG_FILE);
 			TaoConfigs.USER_CONFIG_FILE = configFileName;
 
+			String cockroachPortArg = options.get("cockroachPort");
+			if (cockroachPortArg == null) {
+				TaoLogger.logForce("Please specify cockroachPort");
+				return;
+			}
+			int cockroachPort = Integer.parseInt(cockroachPortArg);
+
 			// Create proxy
 			CockroachTaoProxy proxy = new CockroachTaoProxy(new TaoMessageCreator(), new TaoBlockCreator(),
-					new TaoSubtree());
+					new TaoSubtree(), cockroachPort);
 
 			// Initialize and run server
 			proxy.initializeServer();

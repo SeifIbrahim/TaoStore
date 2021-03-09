@@ -1,6 +1,7 @@
 package Messages;
 
 import java.net.InetSocketAddress;
+import java.nio.channels.AsynchronousSocketChannel;
 
 /**
  * @brief Interface the represents a request from the client to the proxy
@@ -77,4 +78,8 @@ public interface ClientRequest {
      * @return byte representation of ClientRequest
      */
     byte[] serialize();
+    
+    AsynchronousSocketChannel getChannel();
+    
+    void setChannel(AsynchronousSocketChannel channel);
 }

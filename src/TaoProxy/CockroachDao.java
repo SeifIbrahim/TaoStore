@@ -37,14 +37,12 @@ class CockroachDao {
 
 	private final Random rand = new Random();
 
-	CockroachDao() {
+	CockroachDao(int port) {
 		PGSimpleDataSource ds = new PGSimpleDataSource();
 		ds.setServerNames(new String[] { "localhost" });
-		ds.setPortNumbers(new int[] { 42267 });
+		ds.setPortNumbers(new int[] { port });
 		ds.setDatabaseName("taostore");
-		ds.setUser("seif");
-		ds.setPassword("seif");
-		ds.setSsl(true);
+		ds.setUser("seif"); ds.setPassword("seif"); ds.setSsl(true);
 		ds.setSslMode("require");
 		ds.setReWriteBatchedInserts(true); // add `rewriteBatchedInserts=true` to pg connection string
 		ds.setApplicationName("taostore");
@@ -58,11 +56,11 @@ class CockroachDao {
 	}
 
 	// thread-safe double-locking singleton accessor
-	public static CockroachDao getInstance() {
+	public static CockroachDao getInstance(int port) {
 		if (instance == null) {
 			synchronized (CockroachDao.class) {
 				if (instance == null) {
-					instance = new CockroachDao();
+					instance = new CockroachDao(port);
 				}
 			}
 		}

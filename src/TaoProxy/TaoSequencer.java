@@ -17,163 +17,161 @@ import java.util.concurrent.*;
  * @brief The Sequencer makes sure that replies are sent to the client in the same order that requests were received
  */
 public class TaoSequencer implements Sequencer {
-    // Size of request queue
-    protected final static int QUEUE_SIZE = 100000;
+	// Size of request queue
+	protected final static int QUEUE_SIZE = 100000;
 
-    // Map that will map each request to the value of the requested block
-    // The value will be null if the reply to this request has not yet been received
-    protected Map<ClientRequest, Block> mRequestMap;
+	// Map that will map each request to the value of the requested block
+	// The value will be null if the reply to this request has not yet been received
+	protected Map<ClientRequest, Block> mRequestMap;
 
-    // Queue of the received requests
-    protected BlockingQueue<ClientRequest> mRequestQueue;
+	// Queue of the received requests
+	protected BlockingQueue<ClientRequest> mRequestQueue;
 
-    // Path and message creators
-    protected PathCreator mBlockCreator;
-    protected MessageCreator mMessageCreator;
+	// Path and message creators
+	protected PathCreator mBlockCreator;
+	protected MessageCreator mMessageCreator;
 
-    // The channel group used for asynchronous socket
-    protected AsynchronousChannelGroup mThreadGroup;
+	// The channel group used for asynchronous socket
+	protected AsynchronousChannelGroup mThreadGroup;
 
-    // A map of each client to a channel to that client
-    protected Map<InetSocketAddress, AsynchronousSocketChannel> mChannelMap;
+	// A map of each client to a channel to that client
+	protected Map<InetSocketAddress, AsynchronousSocketChannel> mChannelMap;
 
-    /**
-     * @brief Default constructor for the TaoStore Sequencer
-     */
-    public TaoSequencer(MessageCreator messageCreator, PathCreator pathCreator) {
-        try {
-            // Assign message creator
-            mMessageCreator = messageCreator;
+	/**
+	 * @brief Default constructor for the TaoStore Sequencer
+	 */
+	public TaoSequencer(MessageCreator messageCreator, PathCreator pathCreator) {
+		try {
+			// Assign message creator
+			mMessageCreator = messageCreator;
 
-            // Assign path creator
-            mBlockCreator = pathCreator;
+			// Assign path creator
+			mBlockCreator = pathCreator;
 
-            // NOTE: ConcurrentHashMap is weakly consistent amongst different threads. Should be fine in this scenario
-            mRequestMap = new ConcurrentHashMap<>();
+			// NOTE: ConcurrentHashMap is weakly consistent amongst different threads.
+			// Should be fine in this scenario
+			mRequestMap = new ConcurrentHashMap<>();
 
-            // Initialize the request queue with QUEUE_SIZE
-            mRequestQueue = new ArrayBlockingQueue<>(QUEUE_SIZE);
+			// Initialize the request queue with QUEUE_SIZE
+			mRequestQueue = new ArrayBlockingQueue<>(QUEUE_SIZE);
 
-            // Initialize channel map
-            mChannelMap = new HashMap<>();
+			// Initialize channel map
+			mChannelMap = new HashMap<>();
 
-            // Thread group used for asynchronous I/O
-            mThreadGroup = AsynchronousChannelGroup.withFixedThreadPool(TaoConfigs.PROXY_THREAD_COUNT, Executors.defaultThreadFactory());
+			// Thread group used for asynchronous I/O
+			mThreadGroup = AsynchronousChannelGroup.withFixedThreadPool(TaoConfigs.PROXY_THREAD_COUNT,
+					Executors.defaultThreadFactory());
 
-            // Run the serialize procedure in a different thread
-            Runnable serializeProcedure = this::serializationProcedure;
-            new Thread(serializeProcedure).start();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
+			// Run the serialize procedure in a different thread
+			Runnable serializeProcedure = this::serializationProcedure;
+			new Thread(serializeProcedure).start();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
 
-    @Override
-    public void onReceiveRequest(ClientRequest req) {
-        try {
-            // Create an empty block with null data
-            Block empty = mBlockCreator.createBlock();
-            empty.setData(null);
+	@Override
+	public void onReceiveRequest(ClientRequest req) {
+		try {
+			// Create an empty block with null data
+			Block empty = mBlockCreator.createBlock();
+			empty.setData(null);
 
-            // Put request and new empty block into request map
-            mRequestMap.put(req, empty);
+			if (mRequestMap.containsKey(req)) {
+				System.out.println("GOT IDENTITICAL REQUESTS. THIS SHOULDN'T HAPPEN.");
+			}
+			// Put request and new empty block into request map
+			mRequestMap.put(req, empty);
 
-            // Add this request to the request queue
-            mRequestQueue.add(req);
+			// Add this request to the request queue
+			mRequestQueue.add(req);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
 
-            // If we do not have an existing channel for this client, we create a new one
-            if (mChannelMap.get(req.getClientAddress()) == null || req.getRequestID() == 0) {
-                // Create channel
-                AsynchronousSocketChannel channel = AsynchronousSocketChannel.open(mThreadGroup);
+	@Override
+	public void onReceiveResponse(ClientRequest req, ServerResponse resp, byte[] data) {
+		try {
+			// Create a new block and set the data
+			Block b = mBlockCreator.createBlock();
+			b.setData(data);
 
-                // Make and wait for connection
-                Future connection = channel.connect(req.getClientAddress());
-                connection.get();
+			// Replace empty null block with new block and notify serializationProcedure
+			synchronized (mRequestMap) {
+				mRequestMap.replace(req, b);
+				mRequestMap.notify();
+			}
 
-                // Put channel into map
-                mChannelMap.put(req.getClientAddress(), channel);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
+			TaoLogger.logDebug("Sequencer finished onReceiveResponse for " + req.getRequestID());
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
 
-    @Override
-    public void onReceiveResponse(ClientRequest req, ServerResponse resp, byte[] data) {
-        try {
-            // Create a new block and set the data
-            Block b = mBlockCreator.createBlock();
-            b.setData(data);
+	@Override
+	public void serializationProcedure() {
+		while (true) {
+			try {
+				// Retrieve request from request queue
+				// Blocks if there is no item in queue
+				ClientRequest req = mRequestQueue.take();
 
-            // Replace empty null block with new block and notify serializationProcedure
-            synchronized (mRequestMap) {
-                mRequestMap.replace(req, b);
-                mRequestMap.notify();
-            }
+				// Wait until the reply for req comes back
+				byte[] check;
+				synchronized (mRequestMap) {
+					if (mRequestMap.get(req) == null) {
+						continue;
+					}
+					check = mRequestMap.get(req).getData();
+					while (check == null) {
+						mRequestMap.wait();
+						check = mRequestMap.get(req).getData();
+					}
+				}
 
-            TaoLogger.logDebug("Sequencer finished onReceiveResponse for " + req.getRequestID());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
+				TaoLogger.logDebug(
+						"1 Sequencer going to send response for " + req.getRequestID() + " that was for blockid "
+								+ req.getBlockID() + " hostname " + req.getClientAddress().getHostName());
 
-    @Override
-    public void serializationProcedure() {
-        while (true) {
-            try {
-                // Retrieve request from request queue
-                // Blocks if there is no item in queue
-                ClientRequest req = mRequestQueue.take();
+				// Create a ProxyResponse based on type of request
+				ProxyResponse response = null;
+				if (req.getType() == MessageTypes.CLIENT_READ_REQUEST) {
+					response = mMessageCreator.createProxyResponse();
+					response.setClientRequestID(req.getRequestID());
+					response.setReturnData(mRequestMap.get(req).getData());
+				} else if (req.getType() == MessageTypes.CLIENT_WRITE_REQUEST) {
+					response = mMessageCreator.createProxyResponse();
+					response.setClientRequestID(req.getRequestID());
+					response.setWriteStatus(true);
+				}
 
-                // Wait until the reply for req comes back
-                byte[] check;
-                synchronized (mRequestMap) {
-                    check = mRequestMap.get(req).getData();
-                    while (check == null) {
-                        mRequestMap.wait();
-                        check = mRequestMap.get(req).getData();
-                    }
-                }
+				// Get channel
+				AsynchronousSocketChannel clientChannel = req.getChannel();
 
-                TaoLogger.logDebug("1 Sequencer going to send response for " + req.getRequestID() + " that was for blockid " + req.getBlockID() + " hostname " + req.getClientAddress().getHostName());
+				// Create a response to send to client
+				byte[] serializedResponse = response.serialize();
+				byte[] header = MessageUtility.createMessageHeaderBytes(MessageTypes.PROXY_RESPONSE,
+						serializedResponse.length);
+				ByteBuffer fullMessage = ByteBuffer.wrap(Bytes.concat(header, serializedResponse));
 
-                // Create a ProxyResponse based on type of request
-                ProxyResponse response = null;
-                if (req.getType() == MessageTypes.CLIENT_READ_REQUEST) {
-                    response = mMessageCreator.createProxyResponse();
-                    response.setClientRequestID(req.getRequestID());
-                    response.setReturnData(mRequestMap.get(req).getData());
-                } else if (req.getType() == MessageTypes.CLIENT_WRITE_REQUEST) {
-                    response = mMessageCreator.createProxyResponse();
-                    response.setClientRequestID(req.getRequestID());
-                    response.setWriteStatus(true);
-                }
+				// Make sure only one response is sent at a time
+				synchronized (clientChannel) {
+					// Send message
+					while (fullMessage.remaining() > 0) {
+						Future<Integer> writeResult = clientChannel.write(fullMessage);
+						writeResult.get();
+					}
 
-                // Get channel
-                AsynchronousSocketChannel clientChannel = mChannelMap.get(req.getClientAddress());
+					// Clear buffer
+					fullMessage = null;
 
-                // Create a response to send to client
-                byte[] serializedResponse = response.serialize();
-                byte[] header = MessageUtility.createMessageHeaderBytes(MessageTypes.PROXY_RESPONSE, serializedResponse.length);
-                ByteBuffer fullMessage = ByteBuffer.wrap(Bytes.concat(header, serializedResponse));
-
-                // Make sure only one response is sent at a time
-                synchronized (clientChannel) {
-                    // Send message
-                    while (fullMessage.remaining() > 0) {
-                        Future<Integer> writeResult = clientChannel.write(fullMessage);
-                        writeResult.get();
-                    }
-
-                    // Clear buffer
-                    fullMessage = null;
-
-                    // Remove request from request map
-                    mRequestMap.remove(req);
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-    }
+					// Remove request from request map
+					mRequestMap.remove(req);
+				}
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+	}
 }

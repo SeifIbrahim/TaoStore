@@ -241,7 +241,7 @@ class CockroachDao {
 	 * @return path data as a byte array
 	 */
 	public byte[] readPath(long pathID) {
-		System.out.println("Reading path: " + pathID);
+		TaoLogger.logInfo("Reading path: " + pathID);
 		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 		try {
 			outputStream.write(Longs.toByteArray(pathID));
@@ -262,7 +262,7 @@ class CockroachDao {
 	 * @return success
 	 */
 	public boolean writePath(long pathID, byte[] data) {
-		System.out.println("Writing path: " + pathID);
+		TaoLogger.logInfo("Writing path: " + pathID);
 		final int bucketSize = (int) TaoConfigs.ENCRYPTED_BUCKET_SIZE;
 		final int numBuckets = data.length / bucketSize;
 

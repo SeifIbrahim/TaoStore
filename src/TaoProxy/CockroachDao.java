@@ -8,6 +8,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.Random;
+import java.util.concurrent.locks.ReentrantLock;
+
 import org.postgresql.ds.PGSimpleDataSource;
 
 import com.google.common.primitives.Longs;
@@ -36,6 +38,10 @@ class CockroachDao {
 	private Connection connection;
 
 	private final Random rand = new Random();
+
+	// Make sure only one transaction is happening at a time
+	// prevents "error: no transaction in progress"
+	protected final transient ReentrantLock cockroachDaoLock = new ReentrantLock();
 
 	CockroachDao(int port) {
 		PGSimpleDataSource ds = new PGSimpleDataSource();
@@ -91,8 +97,10 @@ class CockroachDao {
 				}
 
 				try {
+					cockroachDaoLock.lock();
 					rv += pstmt.executeUpdate();
 					connection.commit();
+					cockroachDaoLock.unlock();
 					break;
 				} catch (SQLException e) {
 					if (RETRY_SQL_STATE.equals(e.getSQLState())) {

@@ -140,7 +140,7 @@ public class CockroachTaoProcessor extends TaoProcessor {
 
 		// Needed in order to clean up subtree later
 		List<Long> allWriteBackIDs = new ArrayList<>();
-		// Take the subtree writer's lock
+		// Take the subtree reader's lock
 		mSubtreeRWL.readLock().lock();
 		TaoLogger.logInfo("Going to do writeback");
 		// take a snapshot of the first TaoConfigs.WRITE_BACK_THRESHOLD path IDs from

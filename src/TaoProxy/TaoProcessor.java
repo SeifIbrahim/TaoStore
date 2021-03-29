@@ -773,8 +773,8 @@ public class TaoProcessor implements Processor {
 
     @Override
     public void flush(long pathID) {
-        // Take a subtree reader's lock
-        mSubtreeRWL.readLock().lock();
+        // Take a subtree writer's lock
+        mSubtreeRWL.writeLock().lock();
 
         TaoLogger.logInfo("Doing a flush for pathID " + pathID);
 
@@ -784,7 +784,7 @@ public class TaoProcessor implements Processor {
 
 
         if (pathToFlush == null) {
-            mSubtreeRWL.readLock().unlock();
+            mSubtreeRWL.writeLock().unlock();
             return;
         }
 
@@ -846,7 +846,7 @@ public class TaoProcessor implements Processor {
         pathToFlush.unlockPath();
 
         // Release subtree reader's lock
-        mSubtreeRWL.readLock().unlock();
+        mSubtreeRWL.writeLock().unlock();
 
         // Add this path to the write queue
         synchronized (mWriteQueue) {
@@ -963,8 +963,8 @@ public class TaoProcessor implements Processor {
             // Deep copy of paths in subtree for writeback
             Map<InetSocketAddress, List<Path>> wbPaths = new HashMap<>();
 
-            // Take the subtree writer's lock
-            mSubtreeRWL.writeLock().lock();
+            // Take the subtree reader's lock
+            mSubtreeRWL.readLock().lock();
 
             // Make a deep copy of the needed paths from the subtree
             for (InetSocketAddress serverAddr : writebackMap.keySet()) {
@@ -998,8 +998,8 @@ public class TaoProcessor implements Processor {
                 wbPaths.put(serverAddr, paths);
             }
 
-            // Release the subtree writer's lock
-            mSubtreeRWL.writeLock().unlock();
+            // Release the subtree reader's lock
+            mSubtreeRWL.readLock().unlock();
 
             // Now we will send the writeback request to each server
             for (InetSocketAddress serverAddr : wbPaths.keySet()) {
@@ -1153,7 +1153,9 @@ public class TaoProcessor implements Processor {
                                                             for (Long l : mPathReqMultiSet.elementSet()) {
                                                                 set.add(l);
                                                             }
+                                                            mSubtreeRWL.writeLock().lock();
                                                             mSubtree.deleteNodes(pathID, finalWriteBackTime, set);
+                                                            mSubtreeRWL.writeLock().unlock();
                                                         }
                                                     }
                                                 }

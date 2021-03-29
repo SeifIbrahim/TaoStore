@@ -141,9 +141,11 @@ public class CockroachTaoProcessor extends TaoProcessor {
 		// Needed in order to clean up subtree later
 		List<Long> allWriteBackIDs = new ArrayList<>();
 		// Take the subtree writer's lock
-                mSubtreeRWL.writeLock().lock();
+		mSubtreeRWL.readLock().lock();
 		TaoLogger.logInfo("Going to do writeback");
-		// Write the first TaoConfigs.WRITE_BACK_THRESHOLD path IDs from the mWriteQueue
+		// take a snapshot of the first TaoConfigs.WRITE_BACK_THRESHOLD path IDs from
+		// the mWriteQueue
+		List<Path> paths = new ArrayList<Path>();
 		for (int i = 0; i < TaoConfigs.WRITE_BACK_THRESHOLD; i++) {
 			Long pathID;
 			synchronized (mWriteQueue) {
@@ -151,13 +153,19 @@ public class CockroachTaoProcessor extends TaoProcessor {
 			}
 			allWriteBackIDs.add(pathID);
 			Path path = mSubtree.getPath(pathID);
-			if(path != null) {
-				byte[] encryptedPath = mCryptoUtil.encryptPath(path);
-				final boolean success = this.cockroachDao.writePath(pathID, encryptedPath);
-				assert success : "Failed to write path " + pathID;
+			if (path != null) {
+				TaoPath pathCopy = new TaoPath();
+				pathCopy.initFromPath(path);
+				paths.add(pathCopy);
 			}
 		}
-		mSubtreeRWL.writeLock().unlock();
+		mSubtreeRWL.readLock().unlock();
+
+		for (Path path : paths) {
+			byte[] encryptedPath = mCryptoUtil.encryptPath(path);
+			final boolean success = this.cockroachDao.writePath(path.getPathID(), encryptedPath);
+			assert success : "Failed to write path " + path.getPathID();
+		}
 
 		// Iterate through every path that was written, check if there
 		// are any nodes we can delete

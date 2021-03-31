@@ -20,18 +20,17 @@ public class CockroachTaoProxy extends TaoProxy {
 	 * @param pathCreator
 	 * @param subtree
 	 */
-	public CockroachTaoProxy(MessageCreator messageCreator, PathCreator pathCreator, Subtree subtree,
-			int cockroachPort) {
-		cockroachDao = CockroachDao.getInstance(cockroachPort);
+	public CockroachTaoProxy(MessageCreator messageCreator, PathCreator pathCreator, Subtree subtree) {
+		// Initialize needed constants
+		TaoConfigs.initConfiguration();
+
+		cockroachDao = CockroachDao.getInstance();
 
 		// For trace purposes
 		TaoLogger.logLevel = TaoLogger.LOG_OFF;
 
 		// For profiling purposes
 		mProfiler = new TaoProfiler();
-
-		// Initialize needed constants
-		TaoConfigs.initConfiguration();
 
 		// Create a CryptoUtil
 		mCryptoUtil = new TaoCryptoUtil();
@@ -57,7 +56,7 @@ public class CockroachTaoProxy extends TaoProxy {
 		// Initialize the sequencer and proxy
 		mSequencer = new TaoSequencer(mMessageCreator, mPathCreator);
 		mProcessor = new CockroachTaoProcessor(this, mSequencer, mThreadGroup, mMessageCreator, mPathCreator,
-				mCryptoUtil, mSubtree, mPositionMap, mRelativeLeafMapper, mProfiler, cockroachPort);
+				mCryptoUtil, mSubtree, mPositionMap, mRelativeLeafMapper, mProfiler);
 	}
 
 	/**
@@ -83,7 +82,7 @@ public class CockroachTaoProxy extends TaoProxy {
 
 			// Encrypt path
 			byte[] dataToWrite = mCryptoUtil.encryptPath(defaultPath);
-			
+
 			this.cockroachDao.writePath(i, dataToWrite);
 		}
 	}
@@ -98,16 +97,9 @@ public class CockroachTaoProxy extends TaoProxy {
 			String configFileName = options.getOrDefault("config_file", TaoConfigs.USER_CONFIG_FILE);
 			TaoConfigs.USER_CONFIG_FILE = configFileName;
 
-			String cockroachPortArg = options.get("cockroachPort");
-			if (cockroachPortArg == null) {
-				TaoLogger.logForce("Please specify cockroachPort");
-				return;
-			}
-			int cockroachPort = Integer.parseInt(cockroachPortArg);
-
 			// Create proxy
 			CockroachTaoProxy proxy = new CockroachTaoProxy(new TaoMessageCreator(), new TaoBlockCreator(),
-					new TaoSubtree(), cockroachPort);
+					new TaoSubtree());
 
 			// Initialize and run server
 			proxy.initializeServer();

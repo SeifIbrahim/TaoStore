@@ -18,10 +18,10 @@ public class CockroachTaoProcessor extends TaoProcessor {
 
 	public CockroachTaoProcessor(Proxy proxy, Sequencer sequencer, AsynchronousChannelGroup threadGroup,
 			MessageCreator messageCreator, PathCreator pathCreator, CryptoUtil cryptoUtil, Subtree subtree,
-			PositionMap positionMap, Map<Long, Long> relativeMapper, Profiler profiler, int cockroachPort) {
+			PositionMap positionMap, Map<Long, Long> relativeMapper, Profiler profiler) {
 		super(proxy, sequencer, threadGroup, messageCreator, pathCreator, cryptoUtil, subtree, positionMap,
 				relativeMapper, profiler);
-		this.cockroachDao = CockroachDao.getInstance(cockroachPort);
+		this.cockroachDao = CockroachDao.getInstance();
 	}
 
 	@Override

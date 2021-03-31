@@ -43,12 +43,15 @@ class CockroachDao {
 	// prevents "error: no transaction in progress"
 	protected final transient ReentrantLock cockroachDaoLock = new ReentrantLock();
 
-	CockroachDao(int port) {
+	CockroachDao() {
 		PGSimpleDataSource ds = new PGSimpleDataSource();
-		ds.setServerNames(new String[] { "localhost" });
-		ds.setPortNumbers(new int[] { port });
+		String ip = TaoConfigs.PARTITION_SERVERS.get(0).getAddress().toString();
+		ds.setServerNames(new String[] {ip.substring(ip.indexOf('/') + 1)});
+		ds.setPortNumbers(new int[] { TaoConfigs.SERVER_PORT });
 		ds.setDatabaseName("taostore");
-		ds.setUser("seif"); ds.setPassword("seif"); ds.setSsl(true);
+		ds.setUser("seif");
+		ds.setPassword("seif");
+		ds.setSsl(true);
 		ds.setSslMode("require");
 		ds.setReWriteBatchedInserts(true); // add `rewriteBatchedInserts=true` to pg connection string
 		ds.setApplicationName("taostore");
@@ -62,11 +65,11 @@ class CockroachDao {
 	}
 
 	// thread-safe double-locking singleton accessor
-	public static CockroachDao getInstance(int port) {
+	public static CockroachDao getInstance() {
 		if (instance == null) {
 			synchronized (CockroachDao.class) {
 				if (instance == null) {
-					instance = new CockroachDao(port);
+					instance = new CockroachDao();
 				}
 			}
 		}

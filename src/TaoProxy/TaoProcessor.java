@@ -556,7 +556,9 @@ public class TaoProcessor implements Processor {
         // Insert every bucket along path that is not in subtree into subtree
         // We update the timestamp at this point in order to ensure that a delete does not delete an ancestor node
         // of a node that has been flushed to
+        mSubtreeRWL.writeLock().lock();
         mSubtree.addPath(decryptedPath, mWriteBackCounter);
+        mSubtreeRWL.writeLock().unlock();
 
         // Profiling
         mProfiler.addPathTime(System.currentTimeMillis() - preAddPathTime);
@@ -691,6 +693,7 @@ public class TaoProcessor implements Processor {
 
         // Due to multiple threads moving blocks around, we need to run this in a loop
         while (true) {
+        	mSubtreeRWL.readLock().lock();
             // Check if the bucket containing this blockID is in the subtree
             Bucket targetBucket = mSubtree.getBucketWithBlock(blockID);
 
@@ -703,6 +706,7 @@ public class TaoProcessor implements Processor {
                 if (data != null) {
                     // If not null, we return the data
                     TaoLogger.logDebug("Returning data for block " + blockID);
+					mSubtreeRWL.readLock().unlock();
                     return data;
                 } else {
                     // If null, we look again
@@ -719,6 +723,7 @@ public class TaoProcessor implements Processor {
                 if (targetBlock != null) {
                     // If we found the block in the stash, return the data
                     TaoLogger.logDebug("Returning data for block " + blockID);
+					mSubtreeRWL.readLock().unlock();
                     return targetBlock.getData();
                 } else {
                     // If we did not find the block, we LOOK AGAIN
@@ -727,11 +732,13 @@ public class TaoProcessor implements Processor {
                     // continue;
                 }
             }
+			mSubtreeRWL.readLock().unlock();
 
             // If we've looped 10 times, probably can't find it
             // TODO: We should not get to this point, and thus indicates a coding error
             if (checkNum == 10) {
                 TaoLogger.logError("Cannot find data for block " + blockID);
+                TaoLogger.logForce("----------EXITING----------");
                 System.exit(1);
             }
 
@@ -752,10 +759,12 @@ public class TaoProcessor implements Processor {
         // Due to multiple threads moving blocks around, we need to run this in a loop
         while (true) {
             // Check if block is in subtree
+        	mSubtreeRWL.writeLock().lock();
             Bucket targetBucket = mSubtree.getBucketWithBlock(blockID);
             if (targetBucket != null) {
                 // If the bucket was found, we modify a block
                 if (targetBucket.modifyBlock(blockID, data)) {
+					mSubtreeRWL.writeLock().unlock();
                     return;
                 }
             } else {
@@ -765,16 +774,17 @@ public class TaoProcessor implements Processor {
                 // If the block was found in the stash, we set the data for the block
                 if (targetBlock != null) {
                     targetBlock.setData(data);
+					mSubtreeRWL.writeLock().unlock();
                     return;
                 }
             }
+			mSubtreeRWL.writeLock().unlock();
         }
     }
 
     @Override
     public void flush(long pathID) {
-        // Take a subtree writer's lock
-        mSubtreeRWL.writeLock().lock();
+        mSubtreeRWL.readLock().lock();
 
         TaoLogger.logInfo("Doing a flush for pathID " + pathID);
 
@@ -784,7 +794,7 @@ public class TaoProcessor implements Processor {
 
 
         if (pathToFlush == null) {
-            mSubtreeRWL.writeLock().unlock();
+            mSubtreeRWL.readLock().unlock();
             return;
         }
 
@@ -845,8 +855,7 @@ public class TaoProcessor implements Processor {
         // Unlock the path
         pathToFlush.unlockPath();
 
-        // Release subtree reader's lock
-        mSubtreeRWL.writeLock().unlock();
+        mSubtreeRWL.readLock().unlock();
 
         // Add this path to the write queue
         synchronized (mWriteQueue) {

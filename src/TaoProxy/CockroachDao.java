@@ -8,11 +8,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.Random;
-import java.util.concurrent.locks.ReentrantLock;
-
-import org.postgresql.ds.PGSimpleDataSource;
 
 import com.google.common.primitives.Longs;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 
 import Configuration.TaoConfigs;
 import Configuration.Utility;
@@ -35,32 +34,33 @@ class CockroachDao {
 	private static final int MAX_RETRY_COUNT = 3;
 	private static final String RETRY_SQL_STATE = "40001";
 
-	private Connection connection;
-
 	private final Random rand = new Random();
 
-	// Make sure only one transaction is happening at a time
-	// prevents "error: no transaction in progress"
-	protected final transient ReentrantLock cockroachDaoLock = new ReentrantLock();
+	private HikariDataSource ds;
 
 	CockroachDao() {
-		PGSimpleDataSource ds = new PGSimpleDataSource();
+		HikariConfig config = new HikariConfig();
 		String ip = TaoConfigs.PARTITION_SERVERS.get(0).getAddress().toString();
-		ds.setServerNames(new String[] {ip.substring(ip.indexOf('/') + 1)});
-		ds.setPortNumbers(new int[] { TaoConfigs.SERVER_PORT });
-		ds.setDatabaseName("taostore");
-		ds.setUser("seif");
-		ds.setPassword("seif");
-		ds.setSsl(true);
-		ds.setSslMode("require");
-		ds.setReWriteBatchedInserts(true); // add `rewriteBatchedInserts=true` to pg connection string
-		ds.setApplicationName("taostore");
-		try {
-			this.connection = ds.getConnection();
-		} catch (SQLException e) {
-			System.out.printf("CockroachDao Constructor ERROR: { state => %s, cause => %s, message => %s }\n",
-					e.getSQLState(), e.getCause(), e.getMessage());
-		}
+		ip = ip.substring(ip.indexOf('/') + 1);
+		config.setJdbcUrl("jdbc:postgresql://" + ip + ":" + TaoConfigs.SERVER_PORT + "/taostore");
+		config.setUsername("seif");
+		config.setPassword("seif");
+		// config.addDataSourceProperty("ssl", "true");
+		// config.addDataSourceProperty("sslMode", "require")
+		config.addDataSourceProperty("reWriteBatchedInserts", "true");
+		config.setAutoCommit(false);
+		config.setMaximumPoolSize(64);
+		config.setKeepaliveTime(150000);
+
+		ds = new HikariDataSource(config);
+
+		// try {
+		// this.connection = ds.getConnection();
+		// } catch (SQLException e) {
+		// System.out.printf("CockroachDao Constructor ERROR: { state => %s, cause =>
+		// %s, message => %s }\n",
+		// e.getSQLState(), e.getCause(), e.getMessage());
+		// }
 		createBuckets();
 	}
 
@@ -80,16 +80,16 @@ class CockroachDao {
 	 * Run SQL code in a way that automatically handles the
 	 * transaction retry logic so we don't have to duplicate it in
 	 * various places.
+	 * @param connection 
 	 *
 	 * @return Integer Number of rows updated, or -1 if an error is thrown.
 	 */
-	public Integer runSQLUpdate(PreparedStatement pstmt) {
+	public Integer runSQLUpdate(Connection connection, PreparedStatement pstmt) {
 		int rv = 0;
 
 		try {
 			// We're managing the commit lifecycle ourselves so we can
 			// automatically issue transaction retries.
-			connection.setAutoCommit(false);
 
 			int retryCount = 0;
 
@@ -100,10 +100,8 @@ class CockroachDao {
 				}
 
 				try {
-					cockroachDaoLock.lock();
 					rv += pstmt.executeUpdate();
 					connection.commit();
-					cockroachDaoLock.unlock();
 					break;
 				} catch (SQLException e) {
 					if (RETRY_SQL_STATE.equals(e.getSQLState())) {
@@ -153,7 +151,8 @@ class CockroachDao {
 	public Integer runSQLUpdate(String sqlCode, String... args) {
 		int rv = -1;
 		try {
-			try (PreparedStatement pstmt = connection.prepareStatement(sqlCode)) {
+			try (Connection connection = ds.getConnection();
+					PreparedStatement pstmt = connection.prepareStatement(sqlCode)) {
 				// Loop over the args and insert them into the
 				// prepared statement based on their types. In
 				// this simple example we classify the argument
@@ -169,7 +168,8 @@ class CockroachDao {
 						pstmt.setString(place, arg);
 					}
 				}
-				rv = runSQLUpdate(pstmt);
+				rv = runSQLUpdate(connection ,pstmt);
+				connection.commit();
 			}
 		} catch (SQLException e) {
 			System.out.printf("CockroachDao.runSQLUpdate ERROR: { state => %s, cause => %s, message => %s }\n",
@@ -210,9 +210,10 @@ class CockroachDao {
 	};
 
 	public byte[] readBucket(long bucketID) {
-		try {
+		try (Connection connection = ds.getConnection()) {
 			ResultSet res = connection.createStatement()
 					.executeQuery("SELECT bucket FROM buckets WHERE id = " + bucketID);
+			connection.commit();
 			if (!res.next()) {
 				System.out.printf("No buckets in the table with id %d", bucketID);
 			} else {
@@ -234,10 +235,11 @@ class CockroachDao {
 		int rv = -1;
 		String statement = "UPSERT INTO buckets (id, bucket) VALUES (?, ?)";
 		try {
-			try (PreparedStatement pstmt = connection.prepareStatement(statement)) {
+			try (Connection connection = ds.getConnection();
+					PreparedStatement pstmt = connection.prepareStatement(statement)) {
 				pstmt.setLong(1, bucketID);
 				pstmt.setBytes(2, bucket);
-				rv = runSQLUpdate(pstmt);
+				rv = runSQLUpdate(connection, pstmt);
 			}
 		} catch (SQLException e) {
 			System.out.printf("CockroachDao.writeBucket ERROR: { state => %s, cause => %s, message => %s }\n",
@@ -299,11 +301,6 @@ class CockroachDao {
 	 */
 	public void tearDown() {
 		runSQLUpdate("DROP TABLE buckets;");
-		try {
-			this.connection.close();
-		} catch (SQLException e) {
-			System.out.printf("CockroachDao.tearDown ERROR: { state => %s, cause => %s, message => %s }\n",
-					e.getSQLState(), e.getCause(), e.getMessage());
-		}
+		ds.close();
 	}
 }

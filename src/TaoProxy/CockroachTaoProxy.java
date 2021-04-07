@@ -27,7 +27,8 @@ public class CockroachTaoProxy extends TaoProxy {
 		cockroachDao = CockroachDao.getInstance();
 
 		// For trace purposes
-		TaoLogger.logLevel = TaoLogger.LOG_OFF;
+		TaoLogger.logLevel = TaoLogger.LOG_DEBUG;
+		TaoLogger.BLOCK_DEBUG = true;
 
 		// For profiling purposes
 		mProfiler = new TaoProfiler();

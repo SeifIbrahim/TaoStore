@@ -111,7 +111,7 @@ public class TaoSubtree implements Subtree {
         if (added) {
             for (Block b : mRoot.getFilledBlocks()) {
                 mBlockMap.put(b.getBlockID(), mRoot);
-                TaoLogger.logBlock(b.getBlockID(), "subtree add");
+                TaoLogger.logBlock(b.getBlockID(), "subtree add for path " + path.getPathID());
             }
         }
 
@@ -137,7 +137,7 @@ public class TaoSubtree implements Subtree {
                 if (added) {
                     for (Block b : currentBucket.getRight().getFilledBlocks()) {
                         mBlockMap.put(b.getBlockID(), currentBucket.getRight());
-                        TaoLogger.logBlock(b.getBlockID(), "subtree add");
+                        TaoLogger.logBlock(b.getBlockID(), "subtree add for path " + path.getPathID());
                     }
                 }
 
@@ -152,7 +152,7 @@ public class TaoSubtree implements Subtree {
                 if (added) {
                     for (Block b : currentBucket.getLeft().getFilledBlocks()) {
                         mBlockMap.put(b.getBlockID(), currentBucket.getLeft());
-                        TaoLogger.logBlock(b.getBlockID(), "subtree add");
+                        TaoLogger.logBlock(b.getBlockID(), "subtree add for path" + path.getPathID());
                     }
                 }
 
@@ -360,14 +360,14 @@ public class TaoSubtree implements Subtree {
             if (directions[parentLevel]) {
                 TaoLogger.logDebug("Going to delete the right child for path " + pathID + " at level " + parentLevel);
                 for (Block b : child.getFilledBlocks()) {
-                    TaoLogger.logBlock(b.getBlockID(), "subtree remove");
+                    TaoLogger.logBlock(b.getBlockID(), "subtree remove for path " + pathID);
                 }
                 removeBucketMapping(child);
                 bucket.setRight(null, currentLevel);
             } else {
                 TaoLogger.logDebug("Going to delete the left child for path " + pathID + " at level " + parentLevel);
                 for (Block b : child.getFilledBlocks()) {
-                    TaoLogger.logBlock(b.getBlockID(), "subtree remove");
+                    TaoLogger.logBlock(b.getBlockID(), "subtree remove for path " + pathID);
                 }
                 removeBucketMapping(child);
                 bucket.setLeft(null, currentLevel);

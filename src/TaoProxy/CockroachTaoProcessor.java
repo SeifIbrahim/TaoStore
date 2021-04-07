@@ -71,18 +71,19 @@ public class CockroachTaoProcessor extends TaoProcessor {
 			// Fetch a random path from server
 			pathID = mCryptoUtil.getRandomPathID();
 		}
+		// UnlockLOG_WARNING
+		requestListLock.readLock().unlock();
 
 		// Add request to request map list
+		requestListLock.writeLock().lock();
 		requestList.add(req);
+		requestListLock.writeLock().unlock();
 
-		// Unlock
-		requestListLock.readLock().unlock();
 
 		TaoLogger.logDebug("Doing a read for pathID " + pathID);
 
 		// Insert request into mPathReqMultiSet to make sure that this path is not
-		// deleted before this response
-		// returns from server
+		// deleted before this response returns from server
 		mPathReqMultiSet.add(pathID);
 
 		byte[] encryptedPath = this.cockroachDao.readPath(pathID);
@@ -169,10 +170,12 @@ public class CockroachTaoProcessor extends TaoProcessor {
 
 		// Iterate through every path that was written, check if there
 		// are any nodes we can delete
+		mSubtreeRWL.writeLock().lock();
 		for (Long pathID : allWriteBackIDs) {
 			// Upon response, delete all nodes in subtree whose
 			// timestamp is <= timeStamp, and are not in mPathReqMultiSet
 			mSubtree.deleteNodes(pathID, writeBackTime, new HashSet<Long>(mPathReqMultiSet.elementSet()));
 		}
+		mSubtreeRWL.writeLock().unlock();
 	}
 }

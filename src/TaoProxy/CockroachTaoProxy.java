@@ -27,8 +27,8 @@ public class CockroachTaoProxy extends TaoProxy {
 		cockroachDao = CockroachDao.getInstance();
 
 		// For trace purposes
-		TaoLogger.logLevel = TaoLogger.LOG_DEBUG;
-		TaoLogger.BLOCK_DEBUG = true;
+		TaoLogger.logLevel = TaoLogger.LOG_OFF;
+		// TaoLogger.BLOCK_DEBUG = true;
 
 		// For profiling purposes
 		mProfiler = new TaoProfiler();
@@ -84,7 +84,7 @@ public class CockroachTaoProxy extends TaoProxy {
 			// Encrypt path
 			byte[] dataToWrite = mCryptoUtil.encryptPath(defaultPath);
 
-			this.cockroachDao.writePath(i, dataToWrite);
+			this.cockroachDao.writePath(i, dataToWrite, 0);
 		}
 	}
 

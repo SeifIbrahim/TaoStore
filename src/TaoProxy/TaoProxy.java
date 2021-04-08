@@ -271,10 +271,10 @@ public class TaoProxy implements Proxy {
     public void onReceiveResponse(ClientRequest req, ServerResponse resp, boolean isFakeRead) {
         // When a response is received, the processor will answer the request, flush the path, then may perform a
         // write back
-        //mSubtreeLock.lock();
+        // mSubtreeLock.lock();
         mProcessor.answerRequest(req, resp, isFakeRead);
         mProcessor.flush(resp.getPathID());
-        //mSubtreeLock.unlock();
+        // mSubtreeLock.unlock();
         mProcessor.writeBack(TaoConfigs.WRITE_BACK_THRESHOLD);
     }
 

@@ -54,13 +54,6 @@ class CockroachDao {
 
 		ds = new HikariDataSource(config);
 
-		// try {
-		// this.connection = ds.getConnection();
-		// } catch (SQLException e) {
-		// System.out.printf("CockroachDao Constructor ERROR: { state => %s, cause =>
-		// %s, message => %s }\n",
-		// e.getSQLState(), e.getCause(), e.getMessage());
-		// }
 		createBuckets();
 	}
 
@@ -168,8 +161,7 @@ class CockroachDao {
 						pstmt.setString(place, arg);
 					}
 				}
-				rv = runSQLUpdate(connection ,pstmt);
-				connection.commit();
+				rv = runSQLUpdate(connection, pstmt);
 			}
 		} catch (SQLException e) {
 			System.out.printf("CockroachDao.runSQLUpdate ERROR: { state => %s, cause => %s, message => %s }\n",
@@ -206,7 +198,7 @@ class CockroachDao {
 	 * Creates a fresh, empty accounts table in the database.
 	 */
 	public void createBuckets() {
-		runSQLUpdate("CREATE TABLE IF NOT EXISTS buckets (id INT PRIMARY KEY, bucket BYTES)");
+		runSQLUpdate("CREATE TABLE IF NOT EXISTS buckets (id INT PRIMARY KEY, bucket BYTES, timestamp INT)");
 	};
 
 	public byte[] readBucket(long bucketID) {
@@ -229,18 +221,22 @@ class CockroachDao {
 	/**
 	 * @param id
 	 * @param bucket
+	 * @param timestamp 
 	 * @return 1 if bucket is written, -1 if error
 	 */
-	private Integer writeBucket(long bucketID, byte[] bucket) {
+	private Integer writeBucket(long bucketID, byte[] bucket, long timestamp) {
 		int rv = -1;
-		String statement = "UPSERT INTO buckets (id, bucket) VALUES (?, ?)";
-		try {
-			try (Connection connection = ds.getConnection();
-					PreparedStatement pstmt = connection.prepareStatement(statement)) {
-				pstmt.setLong(1, bucketID);
-				pstmt.setBytes(2, bucket);
-				rv = runSQLUpdate(connection, pstmt);
-			}
+		// String statement = "UPSERT INTO buckets (id, bucket, timestamp) VALUES (?, ?,
+		// 0)";
+		String statement = "INSERT INTO buckets (id, bucket, timestamp) VALUES (?, ?, ?)"
+				+ " ON CONFLICT (id) DO UPDATE SET (bucket, timestamp)=(excluded.bucket, excluded.timestamp)"
+				+ " WHERE excluded.timestamp >= buckets.timestamp";
+		try (Connection connection = ds.getConnection();
+				PreparedStatement pstmt = connection.prepareStatement(statement)) {
+			pstmt.setLong(1, bucketID);
+			pstmt.setBytes(2, bucket);
+			pstmt.setLong(3, timestamp);
+			rv = runSQLUpdate(connection, pstmt);
 		} catch (SQLException e) {
 			System.out.printf("CockroachDao.writeBucket ERROR: { state => %s, cause => %s, message => %s }\n",
 					e.getSQLState(), e.getCause(), e.getMessage());
@@ -254,7 +250,6 @@ class CockroachDao {
 	 * @return path data as a byte array
 	 */
 	public byte[] readPath(long pathID) {
-		TaoLogger.logInfo("Reading path: " + pathID);
 		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 		try {
 			outputStream.write(Longs.toByteArray(pathID));
@@ -272,10 +267,10 @@ class CockroachDao {
 	 * Writes a path from data into the database
 	 * @param pathID
 	 * @param data
+	 * @param writeBackTime 
 	 * @return success
 	 */
-	public boolean writePath(long pathID, byte[] data) {
-		TaoLogger.logInfo("Writing path: " + pathID);
+	public boolean writePath(long pathID, byte[] data, long timestamp) {
 		final int bucketSize = (int) TaoConfigs.ENCRYPTED_BUCKET_SIZE;
 		final int numBuckets = data.length / bucketSize;
 
@@ -289,7 +284,7 @@ class CockroachDao {
 		for (long bucketKey : bucketIDsFromPID(pathID)) {
 			// Get the data for the current bucket to be written
 			byte[] dataToWrite = Arrays.copyOfRange(data, dataIndexStart, dataIndexStart + bucketSize);
-			successfulWrites += writeBucket(bucketKey, dataToWrite);
+			successfulWrites += writeBucket(bucketKey, dataToWrite, timestamp);
 			dataIndexStart += bucketSize;
 		}
 		return successfulWrites == TaoConfigs.TREE_HEIGHT;

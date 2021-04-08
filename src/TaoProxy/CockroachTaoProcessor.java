@@ -164,7 +164,7 @@ public class CockroachTaoProcessor extends TaoProcessor {
 
 		for (Path path : paths) {
 			byte[] encryptedPath = mCryptoUtil.encryptPath(path);
-			final boolean success = this.cockroachDao.writePath(path.getPathID(), encryptedPath);
+			final boolean success = this.cockroachDao.writePath(path.getPathID(), encryptedPath, writeBackTime);
 			assert success : "Failed to write path " + path.getPathID();
 		}
 

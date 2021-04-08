@@ -53,7 +53,7 @@ public class TaoClient implements Client {
 	protected ExecutorService mExecutor;
 
 	public long mClientID;
-	
+
 	public static AtomicLong sNextClientID = new AtomicLong();
 	/* Below static variables are used for load testing */
 
@@ -83,9 +83,8 @@ public class TaoClient implements Client {
 	public static long loadTestStartTime;
 
 	public static ArrayList<Double> sThroughputs = new ArrayList<>();
-	
+
 	public static final long MAX_CLIENT_ID = 128;
-	
 
 	/**
 	 * @brief Default constructor
@@ -94,7 +93,7 @@ public class TaoClient implements Client {
 		try {
 			// Initialize needed constants
 			TaoConfigs.initConfiguration();
-			
+
 			mClientID = sNextClientID.getAndAdd(1);
 
 			// Get the current client's IP
@@ -405,7 +404,7 @@ public class TaoClient implements Client {
 											}
 										}
 									} else {
-										TaoLogger.logForce("Not an async load");
+										// TaoLogger.logForce("Not an async load");
 									}
 									serveProxy();
 								}
@@ -751,6 +750,8 @@ public class TaoClient implements Client {
 			}
 		}
 
+		TaoLogger.logForce("Beginning load test");
+
 		// Begin actual load test
 		ExecutorService clientThreadExecutor = Executors.newFixedThreadPool(concurrentClients,
 				Executors.defaultThreadFactory());
@@ -759,7 +760,10 @@ public class TaoClient implements Client {
 			clientThreadExecutor.submit(loadTestClientThread);
 		}
 		clientThreadExecutor.shutdown();
-		clientThreadExecutor.awaitTermination(loadTestLength * 2, TimeUnit.MILLISECONDS);
+		boolean terminated = clientThreadExecutor.awaitTermination(loadTestLength * 2, TimeUnit.MILLISECONDS);
+		if (!terminated) {
+			TaoLogger.logForce("Clients did not terminate before the timeout elapsed.");
+		}
 
 		double throughputTotal = 0;
 		for (Double l : sThroughputs) {

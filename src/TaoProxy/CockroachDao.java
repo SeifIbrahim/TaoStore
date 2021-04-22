@@ -39,6 +39,7 @@ class CockroachDao {
 	private HikariDataSource ds;
 
 	CockroachDao() {
+		// expects a database named taostore
 		HikariConfig config = new HikariConfig();
 		String ip = TaoConfigs.PARTITION_SERVERS.get(0).getAddress().toString();
 		ip = ip.substring(ip.indexOf('/') + 1);
@@ -49,7 +50,7 @@ class CockroachDao {
 		// config.addDataSourceProperty("sslMode", "require")
 		config.addDataSourceProperty("reWriteBatchedInserts", "true");
 		config.setAutoCommit(false);
-		config.setMaximumPoolSize(64);
+		config.setMaximumPoolSize(128);
 		config.setKeepaliveTime(150000);
 
 		ds = new HikariDataSource(config);

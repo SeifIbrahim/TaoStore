@@ -402,7 +402,7 @@ public class TaoClient implements Client {
 											if (!Arrays.equals(
 													sListOfBytes.get(sReturnMap.get(clientAnswer.getClientRequestID())),
 													clientAnswer.getReturnData())) {
-												TaoLogger.logError("Read failed for block "
+												TaoLogger.logForce("Read failed for block "
 														+ sReturnMap.get(clientAnswer.getClientRequestID()));
 												System.exit(1);
 											}
@@ -542,7 +542,7 @@ public class TaoClient implements Client {
 			writeStatus = client.write(blockID, dataToWrite);
 
 			if (!writeStatus) {
-				TaoLogger.logError("Write failed for block " + i);
+				TaoLogger.logForce("Write failed for block " + i);
 				System.exit(1);
 			} else {
 				TaoLogger.logInfo("Write was successful for " + i);
@@ -617,7 +617,7 @@ public class TaoClient implements Client {
 			writeStatus = client.write(blockID, dataToWrite);
 
 			if (!writeStatus) {
-				TaoLogger.logError("Write failed for block " + i);
+				TaoLogger.logForce("Write failed for block " + i);
 				System.exit(1);
 			} else {
 				TaoLogger.logInfo("Write was successful for " + i);
@@ -643,7 +643,7 @@ public class TaoClient implements Client {
 				sResponseTimes.add(System.currentTimeMillis() - start);
 
 				if (!Arrays.equals(listOfBytes.get(targetBlock - 1), z)) {
-					TaoLogger.logError("Read failed for block " + targetBlock);
+					TaoLogger.logForce("Read failed for block " + targetBlock);
 					System.exit(1);
 				}
 			} else {
@@ -655,7 +655,7 @@ public class TaoClient implements Client {
 				sResponseTimes.add(System.currentTimeMillis() - start);
 
 				if (!writeStatus) {
-					TaoLogger.logError("Write failed for block " + targetBlock);
+					TaoLogger.logForce("Write failed for block " + targetBlock);
 					System.exit(1);
 				}
 			}
@@ -716,7 +716,7 @@ public class TaoClient implements Client {
 					sResponseTimes.add(System.currentTimeMillis() - start);
 
 					if (!writeStatus) {
-						TaoLogger.logError("Write failed for block " + targetBlock);
+						TaoLogger.logForce("Write failed for block " + targetBlock);
 						System.exit(1);
 					} else {
 						TaoLogger.logInfo("Write was successful for " + targetBlock);
@@ -753,7 +753,7 @@ public class TaoClient implements Client {
 				boolean writeStatus = warmupClient.write(blockID, dataToWrite);
 
 				if (!writeStatus) {
-					TaoLogger.logError("Write failed for block " + i);
+					TaoLogger.logForce("Write failed for block " + i);
 					System.exit(1);
 				} else {
 					TaoLogger.logInfo("Write was successful for " + i);
@@ -903,7 +903,7 @@ public class TaoClient implements Client {
 					TaoLogger.logForce("Unknown test type: " + load_test_type);
 				}
 
-				System.exit(1);
+				System.exit(0);
 			}
 		} catch (Exception e) {
 			e.printStackTrace();

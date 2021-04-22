@@ -798,8 +798,7 @@ public class TaoProcessor implements Processor {
 			// If we've looped 10 times, probably can't find it
 			// TODO: We should not get to this point, and thus indicates a coding error
 			if (checkNum == 10) {
-				TaoLogger.logError("Cannot find data for block " + blockID);
-				TaoLogger.logForce("----------EXITING----------");
+				TaoLogger.logForce("Cannot find data for block " + blockID);
 				System.exit(1);
 			}
 

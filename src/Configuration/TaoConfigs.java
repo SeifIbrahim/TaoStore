@@ -77,6 +77,8 @@ public class TaoConfigs {
 
     // The list of storage servers to be used by proxy
     public static List<InetSocketAddress> PARTITION_SERVERS = new ArrayList<>();
+    
+    public static int MAX_CLIENT_ID;
 
     // We only want to initialize constants once per run
     public static AtomicBoolean mHasBeenInitialized = new AtomicBoolean();
@@ -141,6 +143,9 @@ public class TaoConfigs {
                 // Assign the size of initialization vector to be used for encryption
                 String iv_size = properties.getProperty("iv_size");
                 IV_SIZE = Integer.parseInt(iv_size);
+                
+                String max_client_id = properties.getProperty("max_client_id");
+                MAX_CLIENT_ID = Integer.parseInt(max_client_id);
 
                 // Assign server port number
                 String server_port = properties.getProperty("server_port");

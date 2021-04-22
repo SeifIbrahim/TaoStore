@@ -75,16 +75,20 @@ public class TaoClient implements Client {
 	public static int LOAD_SIZE = 1000;
 
 	// Number of unique data items in load test
-	public static int NUM_DATA_ITEMS = 1000;
+	public static int BLOCKS_TO_TEST = 1000;
 
 	// Whether or not a load test is for an async load or not
 	public static boolean ASYNC_LOAD = false;
 
+	// The number of warmup operations to perform before beginning the load test
+	public static int WARMUP_OPERATIONS = 100;
+
+	// Load test length in ms
+	public static int LOAD_TEST_LENGTH = 1000 * 2 * 60;
+
 	public static long loadTestStartTime;
 
 	public static ArrayList<Double> sThroughputs = new ArrayList<>();
-
-	public static final long MAX_CLIENT_ID = 128;
 
 	/**
 	 * @brief Default constructor
@@ -255,7 +259,7 @@ public class TaoClient implements Client {
 		// Because request IDs must be globally unique, we bit-shift the
 		// request ID to the left and add the client ID, thereby
 		// ensuring that no two clients use the same request ID
-		long requestID = (Long.highestOneBit(MAX_CLIENT_ID) + 1) * mRequestID.getAndAdd(1) + mClientID;
+		long requestID = (Long.highestOneBit(TaoConfigs.MAX_CLIENT_ID) + 1) * mRequestID.getAndAdd(1) + mClientID;
 
 		// Create client request
 		ClientRequest request = mMessageCreator.createClientRequest();
@@ -387,7 +391,7 @@ public class TaoClient implements Client {
 
 									if (ASYNC_LOAD) {
 										// If this is an async load, we need to notify the test that we are done
-										if (clientAnswer.getClientRequestID() == (NUM_DATA_ITEMS + LOAD_SIZE - 1)) {
+										if (clientAnswer.getClientRequestID() == (BLOCKS_TO_TEST + LOAD_SIZE - 1)) {
 											synchronized (sAsycLoadLock) {
 												sAsycLoadLock.notifyAll();
 											}
@@ -521,14 +525,14 @@ public class TaoClient implements Client {
 		// Random number generator
 		SecureRandom r = new SecureRandom();
 
-		ZipfDistribution zipf = new ZipfDistribution(NUM_DATA_ITEMS, zipfExp);
+		ZipfDistribution zipf = new ZipfDistribution(BLOCKS_TO_TEST, zipfExp);
 
 		// Do a write for numDataItems blocks
 		long blockID;
 		sListOfBytes = new ArrayList<>();
 
 		boolean writeStatus;
-		for (int i = 1; i <= NUM_DATA_ITEMS; i++) {
+		for (int i = 1; i <= BLOCKS_TO_TEST; i++) {
 			TaoLogger.logInfo("Doing a write for block " + i);
 			blockID = i;
 			byte[] dataToWrite = new byte[TaoConfigs.BLOCK_SIZE];
@@ -596,14 +600,14 @@ public class TaoClient implements Client {
 		// Random number generator
 		SecureRandom r = new SecureRandom();
 
-		ZipfDistribution zipf = new ZipfDistribution(NUM_DATA_ITEMS, zipfExp);
+		ZipfDistribution zipf = new ZipfDistribution(BLOCKS_TO_TEST, zipfExp);
 
 		// Do a write for numDataItems blocks
 		long blockID;
 		ArrayList<byte[]> listOfBytes = new ArrayList<>();
 
 		boolean writeStatus;
-		for (int i = 1; i <= NUM_DATA_ITEMS; i++) {
+		for (int i = 1; i <= BLOCKS_TO_TEST; i++) {
 			TaoLogger.logInfo("Doing a write for block " + i);
 			blockID = i;
 			byte[] dataToWrite = new byte[TaoConfigs.BLOCK_SIZE];
@@ -671,22 +675,23 @@ public class TaoClient implements Client {
 		TaoLogger.logForce("Test took " + (endTime - startTime) + " ms");
 	}
 
-	public static void multiClientLoadTest(int concurrentClients, int loadTestLength, double rwRatio, double zipfExp)
-			throws InterruptedException {
-		final ArrayList<byte[]> listOfBytes = new ArrayList<>();
+	public static void multiClientLoadTest(int concurrentClients, int loadTestLength, int warmupOperations,
+			double rwRatio, double zipfExp) throws InterruptedException {
 		Callable<Integer> loadTestClientThread = () -> {
 			TaoClient client = new TaoClient();
 
 			// Random number generator
 			SecureRandom r = new SecureRandom();
 
-			ZipfDistribution zipf = new ZipfDistribution((int) NUM_DATA_ITEMS, zipfExp);
+			long totalNodes = (long) Math.pow(2, TaoConfigs.TREE_HEIGHT + 1) - 1;
+			long totalBlocks = totalNodes * TaoConfigs.BLOCKS_IN_BUCKET;
+
+			ZipfDistribution zipf = new ZipfDistribution((int) totalBlocks, zipfExp);
 
 			int operationCount = 0;
 
 			double readOrWrite;
 			int targetBlock;
-			byte[] z;
 
 			boolean writeStatus;
 			while (System.currentTimeMillis() < loadTestStartTime + loadTestLength) {
@@ -698,24 +703,23 @@ public class TaoClient implements Client {
 
 					// Send read and keep track of response time
 					long start = System.currentTimeMillis();
-					z = client.read(targetBlock);
+					client.read(targetBlock);
 					sResponseTimes.add(System.currentTimeMillis() - start);
-
-					if (!Arrays.equals(listOfBytes.get(targetBlock - 1), z)) {
-						TaoLogger.logError("Read failed for block " + targetBlock);
-						System.exit(1);
-					}
 				} else {
 					TaoLogger.logInfo("Doing write request #" + ((TaoClient) client).mRequestID.get());
 
 					// Send write and keep track of response time
+					byte[] dataToWrite = new byte[TaoConfigs.BLOCK_SIZE];
+					Arrays.fill(dataToWrite, (byte) targetBlock);
 					long start = System.currentTimeMillis();
-					writeStatus = client.write(targetBlock, listOfBytes.get(targetBlock - 1));
+					writeStatus = client.write(targetBlock, dataToWrite);
 					sResponseTimes.add(System.currentTimeMillis() - start);
 
 					if (!writeStatus) {
 						TaoLogger.logError("Write failed for block " + targetBlock);
 						System.exit(1);
+					} else {
+						TaoLogger.logInfo("Write was successful for " + targetBlock);
 					}
 				}
 				operationCount++;
@@ -728,25 +732,32 @@ public class TaoClient implements Client {
 			return 1;
 		};
 
-		// Do a write for numDataItems blocks
-		TaoClient client = new TaoClient();
-		long blockID;
-		boolean writeStatus;
+		// Warm up the system
+		TaoClient warmupClient = new TaoClient();
+		long totalNodes = (long) Math.pow(2, TaoConfigs.TREE_HEIGHT + 1) - 1;
+		long totalBlocks = totalNodes * TaoConfigs.BLOCKS_IN_BUCKET;
+		SecureRandom r = new SecureRandom();
+		PrimitiveIterator.OfLong blockIDGenerator = r.longs(warmupOperations, 0, totalBlocks - 1).iterator();
 
-		for (int i = 1; i <= NUM_DATA_ITEMS; i++) {
-			TaoLogger.logInfo("Doing a write for block " + i);
-			blockID = i;
-			byte[] dataToWrite = new byte[TaoConfigs.BLOCK_SIZE];
-			Arrays.fill(dataToWrite, (byte) blockID);
-			listOfBytes.add(dataToWrite);
-
-			writeStatus = client.write(blockID, dataToWrite);
-
-			if (!writeStatus) {
-				TaoLogger.logError("Write failed for block " + i);
-				System.exit(1);
+		for (int i = 1; i < warmupOperations; i++) {
+			long blockID = blockIDGenerator.next();
+			int readOrWrite = r.nextInt(2);
+			if (readOrWrite == 0) {
+				TaoLogger.logInfo("Doing a warmup read for block " + blockID);
+				warmupClient.read(blockID);
 			} else {
-				TaoLogger.logInfo("Write was successful for " + i);
+				TaoLogger.logInfo("Doing a warmup write for block " + blockID);
+				byte[] dataToWrite = new byte[TaoConfigs.BLOCK_SIZE];
+				Arrays.fill(dataToWrite, (byte) blockID);
+
+				boolean writeStatus = warmupClient.write(blockID, dataToWrite);
+
+				if (!writeStatus) {
+					TaoLogger.logError("Write failed for block " + i);
+					System.exit(1);
+				} else {
+					TaoLogger.logInfo("Write was successful for " + i);
+				}
 			}
 		}
 
@@ -857,9 +868,12 @@ public class TaoClient implements Client {
 				// Determine the amount of unique data items that can be operated on
 
 				long totalNodes = (long) Math.pow(2, TaoConfigs.TREE_HEIGHT + 1) - 1;
-				long totalBlocks = totalNodes * TaoConfigs.BLOCKS_IN_BUCKET;
-				String data_set_size = options.getOrDefault("data_set_size", Long.toString(totalBlocks));
-				NUM_DATA_ITEMS = Integer.parseInt(data_set_size);
+				long numDataItems = totalNodes * TaoConfigs.BLOCKS_IN_BUCKET;
+				String data_set_size = options.getOrDefault("data_set_size", Long.toString(numDataItems));
+				BLOCKS_TO_TEST = Integer.parseInt(data_set_size);
+
+				TaoLogger.logForce("Tree Height: " + TaoConfigs.TREE_HEIGHT);
+				TaoLogger.logForce("Number of Data Items: " + numDataItems);
 
 				String rwRatioArg = options.getOrDefault("rwRatio", "0.5");
 				double rwRatio = Double.parseDouble(rwRatioArg);
@@ -879,9 +893,12 @@ public class TaoClient implements Client {
 					int concurrentClients = Integer.parseInt(options.getOrDefault("clients", Integer.toString(1)));
 					// loadTestLength in milliseconds
 					int loadTestLength = Integer
-							.parseInt(options.getOrDefault("load_test_length", Integer.toString(1000 * (2 * 60))));
+							.parseInt(options.getOrDefault("load_test_length", Integer.toString(LOAD_TEST_LENGTH)));
+					// The number of warmup operations to perform before starting the load test
+					int warmupOperations = Integer
+							.parseInt(options.getOrDefault("warmup_operations", Integer.toString(WARMUP_OPERATIONS)));
 
-					multiClientLoadTest(concurrentClients, loadTestLength, rwRatio, zipfExp);
+					multiClientLoadTest(concurrentClients, loadTestLength, warmupOperations, rwRatio, zipfExp);
 				} else {
 					TaoLogger.logForce("Unknown test type: " + load_test_type);
 				}

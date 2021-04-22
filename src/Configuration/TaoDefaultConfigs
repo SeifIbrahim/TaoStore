@@ -44,3 +44,6 @@ storage_hostname1=127.0.0.1
 # storage_hostname2=192.168.0.1
 # storage_hostname3=10.138.2.1
 # etc.
+
+# The maximum client ID (same as the maximum number of clients)
+max_client_id = 90

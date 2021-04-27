@@ -21,7 +21,7 @@ public class CockroachTaoProcessor extends TaoProcessor {
 			PositionMap positionMap, Map<Long, Long> relativeMapper, Profiler profiler) {
 		super(proxy, sequencer, threadGroup, messageCreator, pathCreator, cryptoUtil, subtree, positionMap,
 				relativeMapper, profiler);
-		this.cockroachDao = CockroachDao.getInstance();
+		this.cockroachDao = CockroachDao.getInstance(mCryptoUtil);
 	}
 
 	@Override
@@ -78,7 +78,6 @@ public class CockroachTaoProcessor extends TaoProcessor {
 		requestListLock.writeLock().lock();
 		requestList.add(req);
 		requestListLock.writeLock().unlock();
-
 
 		TaoLogger.logDebug("Doing a read for pathID " + pathID);
 
@@ -162,11 +161,8 @@ public class CockroachTaoProcessor extends TaoProcessor {
 		}
 		mSubtreeRWL.readLock().unlock();
 
-		for (Path path : paths) {
-			byte[] encryptedPath = mCryptoUtil.encryptPath(path);
-			final boolean success = this.cockroachDao.writePath(path.getPathID(), encryptedPath, writeBackTime);
-			assert success : "Failed to write path " + path.getPathID();
-		}
+		final boolean success = this.cockroachDao.writePaths(paths, timeStamp);
+		assert success : "Failed to write " + paths.size() + " paths.";
 
 		// Iterate through every path that was written, check if there
 		// are any nodes we can delete

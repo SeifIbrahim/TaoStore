@@ -7,6 +7,11 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Random;
 
 import com.google.common.primitives.Longs;
@@ -38,7 +43,11 @@ class CockroachDao {
 
 	private HikariDataSource ds;
 
-	CockroachDao() {
+	private CryptoUtil mCryptoUtil;
+
+	CockroachDao(CryptoUtil cryptoUtil) {
+		mCryptoUtil = cryptoUtil;
+
 		// expects a database named taostore
 		HikariConfig config = new HikariConfig();
 		String ip = TaoConfigs.PARTITION_SERVERS.get(0).getAddress().toString();
@@ -59,11 +68,11 @@ class CockroachDao {
 	}
 
 	// thread-safe double-locking singleton accessor
-	public static CockroachDao getInstance() {
+	public static CockroachDao getInstance(CryptoUtil cryptoUtil) {
 		if (instance == null) {
 			synchronized (CockroachDao.class) {
 				if (instance == null) {
-					instance = new CockroachDao();
+					instance = new CockroachDao(cryptoUtil);
 				}
 			}
 		}
@@ -227,8 +236,6 @@ class CockroachDao {
 	 */
 	private Integer writeBucket(long bucketID, byte[] bucket, long timestamp) {
 		int rv = -1;
-		// String statement = "UPSERT INTO buckets (id, bucket, timestamp) VALUES (?, ?,
-		// 0)";
 		String statement = "INSERT INTO buckets (id, bucket, timestamp) VALUES (?, ?, ?)"
 				+ " ON CONFLICT (id) DO UPDATE SET (bucket, timestamp)=(excluded.bucket, excluded.timestamp)"
 				+ " WHERE excluded.timestamp >= buckets.timestamp";
@@ -289,6 +296,64 @@ class CockroachDao {
 			dataIndexStart += bucketSize;
 		}
 		return successfulWrites == TaoConfigs.TREE_HEIGHT;
+	}
+
+	/**
+	 * Bulk insert paths
+	 * @param paths
+	 * @param timestamp
+	 * @return success
+	 */
+	public boolean writePaths(List<Path> paths, long timestamp) {
+		TaoLogger.logInfo("Doing a batch write for " + paths.size() + " paths.");
+		final int bucketSize = (int) TaoConfigs.ENCRYPTED_BUCKET_SIZE;
+		final int BATCH_SIZE = 128;
+		String statement = "INSERT INTO buckets (id, bucket, timestamp) VALUES (?, ?, ?)"
+				+ " ON CONFLICT (id) DO UPDATE SET (bucket, timestamp)=(excluded.bucket, excluded.timestamp)"
+				+ " WHERE excluded.timestamp >= buckets.timestamp";
+
+		// put everything into a map so that we only write each bucket once
+		Map<Long, byte[]> blocks = new HashMap<Long, byte[]>();
+		for (Path path : paths) {
+			byte[] encryptedPath = mCryptoUtil.encryptPath(path);
+			// Index into the data byte array
+			// Skip the first 8 bytes which hold the pathID
+			int dataIndexStart = 8;
+			for (long bucketID : bucketIDsFromPID(path.getPathID())) {
+				// Get the data for the current bucket to be written
+				if (!blocks.containsKey(bucketID)) {
+					byte[] bucket = Arrays.copyOfRange(encryptedPath, dataIndexStart, dataIndexStart + bucketSize);
+					blocks.put(bucketID, bucket);
+				}
+				dataIndexStart += bucketSize;
+			}
+		}
+
+		int successfulWrites = 0;
+		try (Connection connection = ds.getConnection();
+				PreparedStatement pstmt = connection.prepareStatement(statement)) {
+			Iterator<Entry<Long, byte[]>> it = blocks.entrySet().iterator();
+			for (int i = 0; i <= blocks.size() / BATCH_SIZE; i++) {
+				final int batch_start = i * BATCH_SIZE;
+				final int batch_end = Math.min((i + 1) * BATCH_SIZE, blocks.size());
+				for (int j = batch_start; j < batch_end; j++) {
+					Entry<Long, byte[]> pair = it.next();
+
+					pstmt.setLong(1, pair.getKey());
+					pstmt.setBytes(2, pair.getValue());
+					pstmt.setLong(3, timestamp);
+
+					pstmt.addBatch();
+				}
+				int[] count = pstmt.executeBatch();
+				successfulWrites += count.length;
+			}
+			connection.commit();
+		} catch (SQLException e) {
+			System.out.printf("CockroachDao.writePaths ERROR: { state => %s, cause => %s, message => %s }\n",
+					e.getSQLState(), e.getCause(), e.getMessage());
+		}
+		return successfulWrites == paths.size() * TaoConfigs.TREE_HEIGHT;
 	}
 
 	/**

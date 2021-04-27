@@ -1,6 +1,8 @@
 package TaoProxy;
 
 import java.nio.channels.AsynchronousChannelGroup;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 
@@ -24,8 +26,6 @@ public class CockroachTaoProxy extends TaoProxy {
 		// Initialize needed constants
 		TaoConfigs.initConfiguration();
 
-		cockroachDao = CockroachDao.getInstance();
-
 		// For trace purposes
 		TaoLogger.logLevel = TaoLogger.LOG_OFF;
 		// TaoLogger.BLOCK_DEBUG = true;
@@ -35,6 +35,8 @@ public class CockroachTaoProxy extends TaoProxy {
 
 		// Create a CryptoUtil
 		mCryptoUtil = new TaoCryptoUtil();
+
+		cockroachDao = CockroachDao.getInstance(mCryptoUtil);
 
 		// Assign subtree
 		mSubtree = subtree;
@@ -74,17 +76,22 @@ public class CockroachTaoProxy extends TaoProxy {
 		TaoLogger.logInfo("Tree height is " + TaoConfigs.TREE_HEIGHT);
 		TaoLogger.logInfo("Total paths " + totalPaths);
 
-		for (int i = 0; i < totalPaths; i++) {
-			TaoLogger.logForce("Creating path " + i);
+		TaoLogger.logForce("Creating " + totalPaths + " paths");
+		// batch to prevent out of memory error
+		final int BATCH_SIZE = 1 << 12;
+		for (int i = 0; i <= totalPaths / BATCH_SIZE; i++) {
+			List<Path> paths = new ArrayList<Path>();
+			final int batch_start = i * BATCH_SIZE;
+			final int batch_end = Math.min((i + 1) * BATCH_SIZE, totalPaths);
+			for (int j = batch_start; j < batch_end; j++) {
+				// Create empty paths and serialize
+				Path defaultPath = mPathCreator.createPath();
+				defaultPath.setPathID(j);
 
-			// Create empty paths and serialize
-			Path defaultPath = mPathCreator.createPath();
-			defaultPath.setPathID(i);
-
-			// Encrypt path
-			byte[] dataToWrite = mCryptoUtil.encryptPath(defaultPath);
-
-			this.cockroachDao.writePath(i, dataToWrite, 0);
+				paths.add(defaultPath);
+			}
+			TaoLogger.logForce("Writing " + paths.size() + " paths");
+			this.cockroachDao.writePaths(paths, 0);
 		}
 	}
 

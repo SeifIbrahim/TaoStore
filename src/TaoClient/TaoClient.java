@@ -97,6 +97,8 @@ public class TaoClient implements Client {
 		try {
 			// Initialize needed constants
 			TaoConfigs.initConfiguration();
+			
+			TaoLogger.logLevel = TaoLogger.LOG_OFF;
 
 			mClientID = sNextClientID.getAndAdd(1);
 

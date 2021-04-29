@@ -161,7 +161,7 @@ public class CockroachTaoProcessor extends TaoProcessor {
 		}
 		mSubtreeRWL.readLock().unlock();
 
-		final boolean success = this.cockroachDao.writePaths(paths, timeStamp);
+		final boolean success = this.cockroachDao.writePaths(paths, timeStamp, 8);
 		assert success : "Failed to write " + paths.size() + " paths.";
 
 		// Iterate through every path that was written, check if there

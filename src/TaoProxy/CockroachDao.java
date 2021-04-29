@@ -304,10 +304,9 @@ class CockroachDao {
 	 * @param timestamp
 	 * @return success
 	 */
-	public boolean writePaths(List<Path> paths, long timestamp) {
+	public boolean writePaths(List<Path> paths, long timestamp, int batch_size) {
 		TaoLogger.logInfo("Doing a batch write for " + paths.size() + " paths.");
 		final int bucketSize = (int) TaoConfigs.ENCRYPTED_BUCKET_SIZE;
-		final int BATCH_SIZE = 128;
 		String statement = "INSERT INTO buckets (id, bucket, timestamp) VALUES (?, ?, ?)"
 				+ " ON CONFLICT (id) DO UPDATE SET (bucket, timestamp)=(excluded.bucket, excluded.timestamp)"
 				+ " WHERE excluded.timestamp >= buckets.timestamp";
@@ -333,9 +332,9 @@ class CockroachDao {
 		try (Connection connection = ds.getConnection();
 				PreparedStatement pstmt = connection.prepareStatement(statement)) {
 			Iterator<Entry<Long, byte[]>> it = blocks.entrySet().iterator();
-			for (int i = 0; i <= blocks.size() / BATCH_SIZE; i++) {
-				final int batch_start = i * BATCH_SIZE;
-				final int batch_end = Math.min((i + 1) * BATCH_SIZE, blocks.size());
+			for (int i = 0; i <= blocks.size() / batch_size; i++) {
+				final int batch_start = i * batch_size;
+				final int batch_end = Math.min((i + 1) * batch_size, blocks.size());
 				for (int j = batch_start; j < batch_end; j++) {
 					Entry<Long, byte[]> pair = it.next();
 

@@ -234,16 +234,28 @@ class CockroachDao {
 	 * @param timestamp 
 	 * @return 1 if bucket is written, -1 if error
 	 */
-	private Integer writeBucket(long bucketID, byte[] bucket, long timestamp) {
+	private Integer writeBucket(long bucketID, byte[] bucket, long timestamp, boolean update) {
 		int rv = -1;
-		String statement = "INSERT INTO buckets (id, bucket, timestamp) VALUES (?, ?, ?)"
-				+ " ON CONFLICT (id) DO UPDATE SET (bucket, timestamp)=(excluded.bucket, excluded.timestamp)"
-				+ " WHERE excluded.timestamp >= buckets.timestamp";
+		String statement;
+		if (update) {
+			statement = "UPDATE buckets SET (bucket, timestamp) = (?, ?)" + " WHERE id = ? AND timestamp <= ?";
+		} else {
+			statement = "INSERT INTO buckets (id, bucket, timestamp) VALUES (?, ?, ?)"
+					+ " ON CONFLICT (id) DO UPDATE SET (bucket, timestamp)=(excluded.bucket, excluded.timestamp)"
+					+ " WHERE excluded.timestamp >= buckets.timestamp";
+		}
 		try (Connection connection = ds.getConnection();
 				PreparedStatement pstmt = connection.prepareStatement(statement)) {
-			pstmt.setLong(1, bucketID);
-			pstmt.setBytes(2, bucket);
-			pstmt.setLong(3, timestamp);
+			if (update) {
+				pstmt.setBytes(1, bucket);
+				pstmt.setLong(2, timestamp);
+				pstmt.setLong(3, bucketID);
+				pstmt.setLong(4, timestamp);
+			} else {
+				pstmt.setLong(1, bucketID);
+				pstmt.setBytes(2, bucket);
+				pstmt.setLong(3, timestamp);
+			}
 			rv = runSQLUpdate(connection, pstmt);
 		} catch (SQLException e) {
 			System.out.printf("CockroachDao.writeBucket ERROR: { state => %s, cause => %s, message => %s }\n",
@@ -278,7 +290,7 @@ class CockroachDao {
 	 * @param writeBackTime 
 	 * @return success
 	 */
-	public boolean writePath(long pathID, byte[] data, long timestamp) {
+	public boolean writePath(long pathID, byte[] data, long timestamp, boolean update) {
 		final int bucketSize = (int) TaoConfigs.ENCRYPTED_BUCKET_SIZE;
 		final int numBuckets = data.length / bucketSize;
 
@@ -292,7 +304,7 @@ class CockroachDao {
 		for (long bucketKey : bucketIDsFromPID(pathID)) {
 			// Get the data for the current bucket to be written
 			byte[] dataToWrite = Arrays.copyOfRange(data, dataIndexStart, dataIndexStart + bucketSize);
-			successfulWrites += writeBucket(bucketKey, dataToWrite, timestamp);
+			successfulWrites += writeBucket(bucketKey, dataToWrite, timestamp, update);
 			dataIndexStart += bucketSize;
 		}
 		return successfulWrites == TaoConfigs.TREE_HEIGHT;
@@ -304,12 +316,17 @@ class CockroachDao {
 	 * @param timestamp
 	 * @return success
 	 */
-	public boolean writePaths(List<Path> paths, long timestamp, int batch_size) {
+	public boolean writePaths(List<Path> paths, long timestamp, int batch_size, boolean update) {
 		TaoLogger.logInfo("Doing a batch write for " + paths.size() + " paths.");
 		final int bucketSize = (int) TaoConfigs.ENCRYPTED_BUCKET_SIZE;
-		String statement = "INSERT INTO buckets (id, bucket, timestamp) VALUES (?, ?, ?)"
-				+ " ON CONFLICT (id) DO UPDATE SET (bucket, timestamp)=(excluded.bucket, excluded.timestamp)"
-				+ " WHERE excluded.timestamp >= buckets.timestamp";
+		String statement;
+		if (update) {
+			statement = "UPDATE buckets SET (bucket, timestamp) = (?, ?)" + " WHERE id = ? AND timestamp <= ?";
+		} else {
+			statement = "INSERT INTO buckets (id, bucket, timestamp) VALUES (?, ?, ?)"
+					+ " ON CONFLICT (id) DO UPDATE SET (bucket, timestamp)=(excluded.bucket, excluded.timestamp)"
+					+ " WHERE excluded.timestamp >= buckets.timestamp";
+		}
 
 		// put everything into a map so that we only write each bucket once
 		Map<Long, byte[]> blocks = new HashMap<Long, byte[]>();
@@ -338,9 +355,16 @@ class CockroachDao {
 				for (int j = batch_start; j < batch_end; j++) {
 					Entry<Long, byte[]> pair = it.next();
 
-					pstmt.setLong(1, pair.getKey());
-					pstmt.setBytes(2, pair.getValue());
-					pstmt.setLong(3, timestamp);
+					if (update) {
+						pstmt.setBytes(1, pair.getValue());
+						pstmt.setLong(2, timestamp);
+						pstmt.setLong(3, pair.getKey());
+						pstmt.setLong(4, timestamp);
+					} else {
+						pstmt.setLong(1, pair.getKey());
+						pstmt.setBytes(2, pair.getValue());
+						pstmt.setLong(3, timestamp);
+					}
 
 					pstmt.addBatch();
 				}

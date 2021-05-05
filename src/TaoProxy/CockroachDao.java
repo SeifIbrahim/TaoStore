@@ -346,32 +346,65 @@ class CockroachDao {
 		}
 
 		int successfulWrites = 0;
-		try (Connection connection = ds.getConnection();
-				PreparedStatement pstmt = connection.prepareStatement(statement)) {
-			Iterator<Entry<Long, byte[]>> it = blocks.entrySet().iterator();
-			for (int i = 0; i <= blocks.size() / batch_size; i++) {
-				final int batch_start = i * batch_size;
-				final int batch_end = Math.min((i + 1) * batch_size, blocks.size());
-				for (int j = batch_start; j < batch_end; j++) {
-					Entry<Long, byte[]> pair = it.next();
-
-					if (update) {
-						pstmt.setBytes(1, pair.getValue());
-						pstmt.setLong(2, timestamp);
-						pstmt.setLong(3, pair.getKey());
-						pstmt.setLong(4, timestamp);
-					} else {
-						pstmt.setLong(1, pair.getKey());
-						pstmt.setBytes(2, pair.getValue());
-						pstmt.setLong(3, timestamp);
-					}
-
-					pstmt.addBatch();
+		int retryCount = 0;
+		try (Connection connection = ds.getConnection()) {
+			while (retryCount <= MAX_RETRY_COUNT) {
+				if (retryCount == MAX_RETRY_COUNT) {
+					String err = String.format("hit max of %s retries, aborting", MAX_RETRY_COUNT);
+					throw new RuntimeException(err);
 				}
-				int[] count = pstmt.executeBatch();
-				successfulWrites += count.length;
+				try (PreparedStatement pstmt = connection.prepareStatement(statement)) {
+					Iterator<Entry<Long, byte[]>> it = blocks.entrySet().iterator();
+					for (int i = 0; i <= blocks.size() / batch_size; i++) {
+						final int batch_start = i * batch_size;
+						final int batch_end = Math.min((i + 1) * batch_size, blocks.size());
+						for (int j = batch_start; j < batch_end; j++) {
+							Entry<Long, byte[]> pair = it.next();
+
+							if (update) {
+								pstmt.setBytes(1, pair.getValue());
+								pstmt.setLong(2, timestamp);
+								pstmt.setLong(3, pair.getKey());
+								pstmt.setLong(4, timestamp);
+							} else {
+								pstmt.setLong(1, pair.getKey());
+								pstmt.setBytes(2, pair.getValue());
+								pstmt.setLong(3, timestamp);
+							}
+
+							pstmt.addBatch();
+						}
+						int[] count = pstmt.executeBatch();
+						successfulWrites += count.length;
+					}
+					connection.commit();
+					break;
+				} catch (SQLException e) {
+					if (RETRY_SQL_STATE.equals(e.getSQLState())) {
+						// Since this is a transaction retry error, we
+						// roll back the transaction and sleep a
+						// little before trying again. Each time
+						// through the loop we sleep for a little
+						// longer than the last time
+						// (A.K.A. exponential backoff).
+						System.out.printf(
+								"retryable exception occurred:\n    sql state = [%s]\n    message = [%s]\n    retry counter = %s\n",
+								e.getSQLState(), e.getMessage(), retryCount);
+						connection.rollback();
+						retryCount++;
+						int sleepMillis = (int) (Math.pow(2, retryCount) * 100) + rand.nextInt(100);
+						System.out.printf("Hit 40001 transaction retry error, sleeping %s milliseconds\n", sleepMillis);
+						try {
+							Thread.sleep(sleepMillis);
+						} catch (InterruptedException ignored) {
+							// Necessary to allow the Thread.sleep()
+							// above so the retry loop can continue.
+						}
+					} else {
+						throw e;
+					}
+				}
 			}
-			connection.commit();
 		} catch (SQLException e) {
 			System.out.printf("CockroachDao.writePaths ERROR: { state => %s, cause => %s, message => %s }\n",
 					e.getSQLState(), e.getCause(), e.getMessage());

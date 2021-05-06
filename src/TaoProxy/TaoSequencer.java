@@ -78,7 +78,7 @@ public class TaoSequencer implements Sequencer {
 			empty.setData(null);
 
 			if (mRequestMap.containsKey(req)) {
-				System.out.println("GOT IDENTITICAL REQUESTS. THIS SHOULDN'T HAPPEN.");
+				TaoLogger.logForce("GOT IDENTITICAL REQUESTS. THIS SHOULDN'T HAPPEN.");
 			}
 			// Put request and new empty block into request map
 			mRequestMap.put(req, empty);

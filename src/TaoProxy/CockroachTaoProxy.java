@@ -78,7 +78,7 @@ public class CockroachTaoProxy extends TaoProxy {
 
 		TaoLogger.logForce("Creating " + totalPaths + " paths");
 		// batch to prevent out of memory error
-		final int BATCH_SIZE = 1 << 12;
+		final int BATCH_SIZE = 4096 * (4096 / TaoConfigs.BLOCK_SIZE);
 		for (int i = 0; i <= totalPaths / BATCH_SIZE; i++) {
 			List<Path> paths = new ArrayList<Path>();
 			final int batch_start = i * BATCH_SIZE;

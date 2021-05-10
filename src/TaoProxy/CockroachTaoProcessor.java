@@ -85,7 +85,8 @@ public class CockroachTaoProcessor extends TaoProcessor {
 		// deleted before this response returns from server
 		mPathReqMultiSet.add(pathID);
 
-		byte[] encryptedPath = this.cockroachDao.readPath(pathID);
+		// byte[] encryptedPath = this.cockroachDao.readPath(pathID);
+		byte[] encryptedPath = this.cockroachDao.batchReadPath(pathID);
 
 		// need to wrap path in a "ServerResponse" to make the proxy happy
 		ServerResponse response = new TaoServerResponse();

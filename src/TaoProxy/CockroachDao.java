@@ -12,6 +12,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.stream.Collectors;
 import java.util.Random;
 
 import com.google.common.primitives.Longs;
@@ -52,14 +53,12 @@ class CockroachDao {
 		HikariConfig config = new HikariConfig();
 		String ip = TaoConfigs.PARTITION_SERVERS.get(0).getAddress().toString();
 		ip = ip.substring(ip.indexOf('/') + 1);
-		config.setJdbcUrl("jdbc:postgresql://" + ip + ":" + TaoConfigs.SERVER_PORT + "/taostore");
+		config.setJdbcUrl("jdbc:postgresql://" + ip + ":" + TaoConfigs.SERVER_PORT + "/taostore?sslmode=disable");
 		config.setUsername("seif");
 		config.setPassword("seif");
-		// config.addDataSourceProperty("ssl", "true");
-		// config.addDataSourceProperty("sslMode", "require")
 		config.addDataSourceProperty("reWriteBatchedInserts", "true");
 		config.setAutoCommit(false);
-		config.setMaximumPoolSize(128);
+		config.setMaximumPoolSize(16);
 		config.setKeepaliveTime(150000);
 
 		ds = new HikariDataSource(config);
@@ -156,6 +155,7 @@ class CockroachDao {
 		try {
 			try (Connection connection = ds.getConnection();
 					PreparedStatement pstmt = connection.prepareStatement(sqlCode)) {
+				connection.setReadOnly(false);
 				// Loop over the args and insert them into the
 				// prepared statement based on their types. In
 				// this simple example we classify the argument
@@ -213,6 +213,7 @@ class CockroachDao {
 
 	public byte[] readBucket(long bucketID) {
 		try (Connection connection = ds.getConnection()) {
+			connection.setReadOnly(true);
 			ResultSet res = connection.createStatement()
 					.executeQuery("SELECT bucket FROM buckets WHERE id = " + bucketID);
 			connection.commit();
@@ -246,6 +247,7 @@ class CockroachDao {
 		}
 		try (Connection connection = ds.getConnection();
 				PreparedStatement pstmt = connection.prepareStatement(statement)) {
+			connection.setReadOnly(false);
 			if (update) {
 				pstmt.setBytes(1, bucket);
 				pstmt.setLong(2, timestamp);
@@ -264,11 +266,6 @@ class CockroachDao {
 		return rv;
 	}
 
-	/**
-	 * Reads a path from the database
-	 * @param pathID
-	 * @return path data as a byte array
-	 */
 	public byte[] readPath(long pathID) {
 		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 		try {
@@ -280,6 +277,35 @@ class CockroachDao {
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
+		return outputStream.toByteArray();
+	}
+
+	public byte[] batchReadPath(long pathID) {
+		int numBucketsRead = 0;
+
+		String query = String.format("SELECT bucket FROM buckets WHERE id in (%s)",
+				Arrays.stream(bucketIDsFromPID(pathID)).mapToObj(String::valueOf).collect(Collectors.joining(", ")));
+
+		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+		try (Connection connection = ds.getConnection()) {
+			connection.setReadOnly(true);
+
+			ResultSet res = connection.createStatement().executeQuery(query);
+			connection.commit();
+
+			outputStream.write(Longs.toByteArray(pathID));
+			while (res.next()) {
+				outputStream.write(res.getBytes("bucket"));
+				numBucketsRead++;
+			}
+		} catch (SQLException e) {
+			System.out.printf("CockroachDao.readBucket ERROR: { state => %s, cause => %s, message => %s }\n",
+					e.getSQLState(), e.getCause(), e.getMessage());
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+
+		assert numBucketsRead == TaoConfigs.TREE_HEIGHT;
 		return outputStream.toByteArray();
 	}
 
@@ -348,6 +374,7 @@ class CockroachDao {
 		int successfulWrites = 0;
 		int retryCount = 0;
 		try (Connection connection = ds.getConnection()) {
+			connection.setReadOnly(false);
 			while (retryCount <= MAX_RETRY_COUNT) {
 				if (retryCount == MAX_RETRY_COUNT) {
 					String err = String.format("hit max of %s retries, aborting", MAX_RETRY_COUNT);

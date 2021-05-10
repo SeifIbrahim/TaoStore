@@ -98,7 +98,7 @@ public class TaoClient implements Client {
 			// Initialize needed constants
 			TaoConfigs.initConfiguration();
 			
-			TaoLogger.logLevel = TaoLogger.LOG_OFF;
+			TaoLogger.logLevel = TaoLogger.LOG_INFO;
 
 			mClientID = sNextClientID.getAndAdd(1);
 
@@ -701,14 +701,14 @@ public class TaoClient implements Client {
 				targetBlock = zipf.sample();
 
 				if (readOrWrite < rwRatio) {
-					TaoLogger.logInfo("Doing read request #" + ((TaoClient) client).mRequestID.get());
+					TaoLogger.logInfo("Doing read request #" + ((TaoClient) client).mRequestID.get() + " for block " + targetBlock);
 
 					// Send read and keep track of response time
 					long start = System.currentTimeMillis();
 					client.read(targetBlock);
 					sResponseTimes.add(System.currentTimeMillis() - start);
 				} else {
-					TaoLogger.logInfo("Doing write request #" + ((TaoClient) client).mRequestID.get());
+					TaoLogger.logInfo("Doing write request #" + ((TaoClient) client).mRequestID.get() + " for block " + targetBlock);
 
 					// Send write and keep track of response time
 					byte[] dataToWrite = new byte[TaoConfigs.BLOCK_SIZE];

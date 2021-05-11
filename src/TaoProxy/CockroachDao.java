@@ -42,7 +42,8 @@ class CockroachDao {
 
 	private final Random rand = new Random();
 
-	private HikariDataSource ds;
+	private HikariDataSource writeDS;
+	private HikariDataSource readDS;
 
 	private CryptoUtil mCryptoUtil;
 
@@ -50,18 +51,31 @@ class CockroachDao {
 		mCryptoUtil = cryptoUtil;
 
 		// expects a database named taostore
-		HikariConfig config = new HikariConfig();
 		String ip = TaoConfigs.PARTITION_SERVERS.get(0).getAddress().toString();
 		ip = ip.substring(ip.indexOf('/') + 1);
-		config.setJdbcUrl("jdbc:postgresql://" + ip + ":" + TaoConfigs.SERVER_PORT + "/taostore?sslmode=disable");
-		config.setUsername("seif");
-		config.setPassword("seif");
-		config.addDataSourceProperty("reWriteBatchedInserts", "true");
-		config.setAutoCommit(false);
-		config.setMaximumPoolSize(16);
-		config.setKeepaliveTime(150000);
+		String url = "jdbc:postgresql://" + ip + ":" + TaoConfigs.SERVER_PORT + "/taostore?sslmode=disable";
 
-		ds = new HikariDataSource(config);
+		// connection pool for writing
+		HikariConfig writeConfig = new HikariConfig();
+		writeConfig.setJdbcUrl(url);
+		writeConfig.setUsername("seif");
+		writeConfig.setPassword("seif");
+		writeConfig.addDataSourceProperty("reWriteBatchedInserts", "true");
+		writeConfig.setAutoCommit(false);
+		writeConfig.setMaximumPoolSize(128);
+		writeConfig.setKeepaliveTime(150000);
+		writeDS = new HikariDataSource(writeConfig);
+
+		// connection pool for reading
+		HikariConfig readConfig = new HikariConfig();
+		readConfig.setJdbcUrl(url);
+		readConfig.setUsername("seif");
+		readConfig.setPassword("seif");
+		readConfig.addDataSourceProperty("reWriteBatchedInserts", "true");
+		readConfig.setAutoCommit(false);
+		readConfig.setMaximumPoolSize(128);
+		readConfig.setKeepaliveTime(150000);
+		readDS = new HikariDataSource(readConfig);
 
 		createBuckets();
 	}
@@ -153,7 +167,7 @@ class CockroachDao {
 	public Integer runSQLUpdate(String sqlCode, String... args) {
 		int rv = -1;
 		try {
-			try (Connection connection = ds.getConnection();
+			try (Connection connection = writeDS.getConnection();
 					PreparedStatement pstmt = connection.prepareStatement(sqlCode)) {
 				connection.setReadOnly(false);
 				// Loop over the args and insert them into the
@@ -231,7 +245,7 @@ class CockroachDao {
 
 	public byte[] readPath(long pathID) {
 		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-		try (Connection connection = ds.getConnection()) {
+		try (Connection connection = readDS.getConnection()) {
 			connection.setReadOnly(true);
 			outputStream.write(Longs.toByteArray(pathID));
 			for (long bucketKey : bucketIDsFromPID(pathID)) {
@@ -254,7 +268,7 @@ class CockroachDao {
 				Arrays.stream(bucketIDsFromPID(pathID)).mapToObj(String::valueOf).collect(Collectors.joining(", ")));
 
 		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-		try (Connection connection = ds.getConnection()) {
+		try (Connection connection = readDS.getConnection()) {
 			connection.setReadOnly(true);
 
 			ResultSet res = connection.createStatement().executeQuery(query);
@@ -318,7 +332,7 @@ class CockroachDao {
 		}
 		Map<Long, byte[]> buckets = getUniqueBuckets(paths);
 		// TODO could be parallelized
-		try (Connection connection = ds.getConnection();
+		try (Connection connection = writeDS.getConnection();
 				PreparedStatement pstmt = connection.prepareStatement(statement)) {
 			connection.setReadOnly(false);
 			for (Entry<Long, byte[]> pair : buckets.entrySet()) {
@@ -362,7 +376,7 @@ class CockroachDao {
 
 		int successfulWrites = 0;
 		int retryCount = 0;
-		try (Connection connection = ds.getConnection()) {
+		try (Connection connection = writeDS.getConnection()) {
 			connection.setReadOnly(false);
 			while (retryCount <= MAX_RETRY_COUNT) {
 				if (retryCount == MAX_RETRY_COUNT) {
@@ -434,6 +448,6 @@ class CockroachDao {
 	 */
 	public void tearDown() {
 		runSQLUpdate("DROP TABLE buckets;");
-		ds.close();
+		writeDS.close();
 	}
 }

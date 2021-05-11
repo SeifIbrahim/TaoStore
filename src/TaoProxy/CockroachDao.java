@@ -211,14 +211,14 @@ class CockroachDao {
 		runSQLUpdate("CREATE TABLE IF NOT EXISTS buckets (id INT PRIMARY KEY, bucket BYTES, timestamp INT)");
 	};
 
-	public byte[] readBucket(long bucketID) {
-		try (Connection connection = ds.getConnection()) {
-			connection.setReadOnly(true);
+	public byte[] readBucket(long bucketID, Connection connection) {
+		try {
 			ResultSet res = connection.createStatement()
 					.executeQuery("SELECT bucket FROM buckets WHERE id = " + bucketID);
 			connection.commit();
 			if (!res.next()) {
-				System.out.printf("No buckets in the table with id %d", bucketID);
+				TaoLogger.logForce("No buckets in the table with id " + bucketID);
+				System.exit(1);
 			} else {
 				return res.getBytes("bucket");
 			}
@@ -229,53 +229,20 @@ class CockroachDao {
 		return null;
 	}
 
-	/**
-	 * @param id
-	 * @param bucket
-	 * @param timestamp 
-	 * @return 1 if bucket is written, -1 if error
-	 */
-	private Integer writeBucket(long bucketID, byte[] bucket, long timestamp, boolean update) {
-		int rv = -1;
-		String statement;
-		if (update) {
-			statement = "UPDATE buckets SET (bucket, timestamp) = (?, ?)" + " WHERE id = ? AND timestamp <= ?";
-		} else {
-			statement = "INSERT INTO buckets (id, bucket, timestamp) VALUES (?, ?, ?)"
-					+ " ON CONFLICT (id) DO UPDATE SET (bucket, timestamp)=(excluded.bucket, excluded.timestamp)"
-					+ " WHERE excluded.timestamp >= buckets.timestamp";
-		}
-		try (Connection connection = ds.getConnection();
-				PreparedStatement pstmt = connection.prepareStatement(statement)) {
-			connection.setReadOnly(false);
-			if (update) {
-				pstmt.setBytes(1, bucket);
-				pstmt.setLong(2, timestamp);
-				pstmt.setLong(3, bucketID);
-				pstmt.setLong(4, timestamp);
-			} else {
-				pstmt.setLong(1, bucketID);
-				pstmt.setBytes(2, bucket);
-				pstmt.setLong(3, timestamp);
-			}
-			rv = runSQLUpdate(connection, pstmt);
-		} catch (SQLException e) {
-			System.out.printf("CockroachDao.writeBucket ERROR: { state => %s, cause => %s, message => %s }\n",
-					e.getSQLState(), e.getCause(), e.getMessage());
-		}
-		return rv;
-	}
-
 	public byte[] readPath(long pathID) {
 		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-		try {
+		try (Connection connection = ds.getConnection()) {
+			connection.setReadOnly(true);
 			outputStream.write(Longs.toByteArray(pathID));
 			for (long bucketKey : bucketIDsFromPID(pathID)) {
-				byte[] bucket = readBucket(bucketKey);
+				byte[] bucket = readBucket(bucketKey, connection);
 				outputStream.write(bucket);
 			}
 		} catch (IOException e) {
 			e.printStackTrace();
+		} catch (SQLException e) {
+			System.out.printf("CockroachDao.readPath ERROR: { state => %s, cause => %s, message => %s }\n",
+					e.getSQLState(), e.getCause(), e.getMessage());
 		}
 		return outputStream.toByteArray();
 	}
@@ -309,29 +276,67 @@ class CockroachDao {
 		return outputStream.toByteArray();
 	}
 
+	private Map<Long, byte[]> getUniqueBuckets(List<Path> paths) {
+		// put everything into a map so that we only write each bucket once
+		final int bucketSize = (int) TaoConfigs.ENCRYPTED_BUCKET_SIZE;
+		Map<Long, byte[]> buckets = new HashMap<Long, byte[]>();
+		for (Path path : paths) {
+			byte[] encryptedPath = mCryptoUtil.encryptPath(path);
+			// Index into the data byte array
+			// Skip the first 8 bytes which hold the pathID
+			int dataIndexStart = 8;
+			for (long bucketID : bucketIDsFromPID(path.getPathID())) {
+				// Get the data for the current bucket to be written
+				if (!buckets.containsKey(bucketID)) {
+					byte[] bucket = Arrays.copyOfRange(encryptedPath, dataIndexStart, dataIndexStart + bucketSize);
+					buckets.put(bucketID, bucket);
+				}
+				dataIndexStart += bucketSize;
+			}
+		}
+		return buckets;
+	}
+
 	/**
 	 * Writes a path from data into the database
+	 * uses a single connection and only writes
+	 * writing unique buckets but doesn't batch
 	 * @param pathID
 	 * @param data
 	 * @param writeBackTime 
 	 * @return success
 	 */
-	public boolean writePath(long pathID, byte[] data, long timestamp, boolean update) {
-		final int bucketSize = (int) TaoConfigs.ENCRYPTED_BUCKET_SIZE;
-		final int numBuckets = data.length / bucketSize;
-
-		assert numBuckets == TaoConfigs.TREE_HEIGHT;
-
+	public boolean writePaths(List<Path> paths, long timestamp, boolean update) {
 		int successfulWrites = 0;
-
-		// Index into the data byte array
-		// Skip the first 8 bytes which hold the pathID
-		int dataIndexStart = 8;
-		for (long bucketKey : bucketIDsFromPID(pathID)) {
-			// Get the data for the current bucket to be written
-			byte[] dataToWrite = Arrays.copyOfRange(data, dataIndexStart, dataIndexStart + bucketSize);
-			successfulWrites += writeBucket(bucketKey, dataToWrite, timestamp, update);
-			dataIndexStart += bucketSize;
+		String statement;
+		if (update) {
+			statement = "UPDATE buckets SET (bucket, timestamp) = (?, ?)" + " WHERE id = ? AND timestamp <= ?";
+		} else {
+			statement = "INSERT INTO buckets (id, bucket, timestamp) VALUES (?, ?, ?)"
+					+ " ON CONFLICT (id) DO UPDATE SET (bucket, timestamp)=(excluded.bucket, excluded.timestamp)"
+					+ " WHERE excluded.timestamp >= buckets.timestamp";
+		}
+		Map<Long, byte[]> buckets = getUniqueBuckets(paths);
+		// TODO could be parallelized
+		try (Connection connection = ds.getConnection();
+				PreparedStatement pstmt = connection.prepareStatement(statement)) {
+			connection.setReadOnly(false);
+			for (Entry<Long, byte[]> pair : buckets.entrySet()) {
+				if (update) {
+					pstmt.setBytes(1, pair.getValue());
+					pstmt.setLong(2, timestamp);
+					pstmt.setLong(3, pair.getKey());
+					pstmt.setLong(4, timestamp);
+				} else {
+					pstmt.setLong(1, pair.getKey());
+					pstmt.setBytes(2, pair.getValue());
+					pstmt.setLong(3, timestamp);
+				}
+				successfulWrites += runSQLUpdate(connection, pstmt);
+			}
+		} catch (SQLException e) {
+			System.out.printf("CockroachDao.writePaths ERROR: { state => %s, cause => %s, message => %s }\n",
+					e.getSQLState(), e.getCause(), e.getMessage());
 		}
 		return successfulWrites == TaoConfigs.TREE_HEIGHT;
 	}
@@ -342,9 +347,8 @@ class CockroachDao {
 	 * @param timestamp
 	 * @return success
 	 */
-	public boolean writePaths(List<Path> paths, long timestamp, int batch_size, boolean update) {
+	public boolean batchWritePaths(List<Path> paths, long timestamp, int batch_size, boolean update) {
 		TaoLogger.logInfo("Doing a batch write for " + paths.size() + " paths.");
-		final int bucketSize = (int) TaoConfigs.ENCRYPTED_BUCKET_SIZE;
 		String statement;
 		if (update) {
 			statement = "UPDATE buckets SET (bucket, timestamp) = (?, ?)" + " WHERE id = ? AND timestamp <= ?";
@@ -354,22 +358,7 @@ class CockroachDao {
 					+ " WHERE excluded.timestamp >= buckets.timestamp";
 		}
 
-		// put everything into a map so that we only write each bucket once
-		Map<Long, byte[]> blocks = new HashMap<Long, byte[]>();
-		for (Path path : paths) {
-			byte[] encryptedPath = mCryptoUtil.encryptPath(path);
-			// Index into the data byte array
-			// Skip the first 8 bytes which hold the pathID
-			int dataIndexStart = 8;
-			for (long bucketID : bucketIDsFromPID(path.getPathID())) {
-				// Get the data for the current bucket to be written
-				if (!blocks.containsKey(bucketID)) {
-					byte[] bucket = Arrays.copyOfRange(encryptedPath, dataIndexStart, dataIndexStart + bucketSize);
-					blocks.put(bucketID, bucket);
-				}
-				dataIndexStart += bucketSize;
-			}
-		}
+		Map<Long, byte[]> buckets = getUniqueBuckets(paths);
 
 		int successfulWrites = 0;
 		int retryCount = 0;
@@ -381,10 +370,10 @@ class CockroachDao {
 					throw new RuntimeException(err);
 				}
 				try (PreparedStatement pstmt = connection.prepareStatement(statement)) {
-					Iterator<Entry<Long, byte[]>> it = blocks.entrySet().iterator();
-					for (int i = 0; i <= blocks.size() / batch_size; i++) {
+					Iterator<Entry<Long, byte[]>> it = buckets.entrySet().iterator();
+					for (int i = 0; i <= buckets.size() / batch_size; i++) {
 						final int batch_start = i * batch_size;
-						final int batch_end = Math.min((i + 1) * batch_size, blocks.size());
+						final int batch_end = Math.min((i + 1) * batch_size, buckets.size());
 						for (int j = batch_start; j < batch_end; j++) {
 							Entry<Long, byte[]> pair = it.next();
 

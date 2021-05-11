@@ -91,7 +91,7 @@ public class CockroachTaoProxy extends TaoProxy {
 				paths.add(defaultPath);
 			}
 			TaoLogger.logForce("Writing " + paths.size() + " paths");
-			this.cockroachDao.writePaths(paths, 0, 128, false);
+			this.cockroachDao.batchWritePaths(paths, 0, 128, false);
 		}
 	}
 

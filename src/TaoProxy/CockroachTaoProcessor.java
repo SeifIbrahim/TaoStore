@@ -162,13 +162,7 @@ public class CockroachTaoProcessor extends TaoProcessor {
 		}
 		mSubtreeRWL.readLock().unlock();
 
-		/*
-		 * for (Path path : paths) { byte[] encryptedPath =
-		 * mCryptoUtil.encryptPath(path); final boolean success =
-		 * this.cockroachDao.writePath(path.getPathID(), encryptedPath, writeBackTime);
-		 * assert success : "Failed to write path " + path.getPathID(); }
-		 */
-		final boolean success = this.cockroachDao.writePaths(paths, writeBackTime, 128, true);
+		final boolean success = this.cockroachDao.writePaths(paths, writeBackTime, true);
 		assert success : "Failed to write paths";
 
 		// Iterate through every path that was written, check if there

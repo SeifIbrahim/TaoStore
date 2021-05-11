@@ -73,8 +73,9 @@ class CockroachDao {
 		readConfig.setPassword("seif");
 		readConfig.addDataSourceProperty("reWriteBatchedInserts", "true");
 		readConfig.setAutoCommit(false);
-		readConfig.setMaximumPoolSize(128);
+		readConfig.setMaximumPoolSize(32);
 		readConfig.setKeepaliveTime(150000);
+		readConfig.setReadOnly(true);
 		readDS = new HikariDataSource(readConfig);
 
 		createBuckets();
@@ -169,7 +170,6 @@ class CockroachDao {
 		try {
 			try (Connection connection = writeDS.getConnection();
 					PreparedStatement pstmt = connection.prepareStatement(sqlCode)) {
-				connection.setReadOnly(false);
 				// Loop over the args and insert them into the
 				// prepared statement based on their types. In
 				// this simple example we classify the argument
@@ -246,7 +246,6 @@ class CockroachDao {
 	public byte[] readPath(long pathID) {
 		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 		try (Connection connection = readDS.getConnection()) {
-			connection.setReadOnly(true);
 			outputStream.write(Longs.toByteArray(pathID));
 			for (long bucketKey : bucketIDsFromPID(pathID)) {
 				byte[] bucket = readBucket(bucketKey, connection);
@@ -269,8 +268,6 @@ class CockroachDao {
 
 		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 		try (Connection connection = readDS.getConnection()) {
-			connection.setReadOnly(true);
-
 			ResultSet res = connection.createStatement().executeQuery(query);
 			connection.commit();
 
@@ -334,7 +331,6 @@ class CockroachDao {
 		// TODO could be parallelized
 		try (Connection connection = writeDS.getConnection();
 				PreparedStatement pstmt = connection.prepareStatement(statement)) {
-			connection.setReadOnly(false);
 			for (Entry<Long, byte[]> pair : buckets.entrySet()) {
 				if (update) {
 					pstmt.setBytes(1, pair.getValue());
@@ -377,7 +373,6 @@ class CockroachDao {
 		int successfulWrites = 0;
 		int retryCount = 0;
 		try (Connection connection = writeDS.getConnection()) {
-			connection.setReadOnly(false);
 			while (retryCount <= MAX_RETRY_COUNT) {
 				if (retryCount == MAX_RETRY_COUNT) {
 					String err = String.format("hit max of %s retries, aborting", MAX_RETRY_COUNT);

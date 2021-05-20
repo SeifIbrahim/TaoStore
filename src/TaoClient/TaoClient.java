@@ -774,6 +774,7 @@ public class TaoClient implements Client {
 		}
 		clientThreadExecutor.shutdown();
 		boolean terminated = clientThreadExecutor.awaitTermination(loadTestLength * 2, TimeUnit.MILLISECONDS);
+		long loadTestEndTime = System.currentTimeMillis();
 		if (!terminated) {
 			TaoLogger.logForce("Clients did not terminate before the timeout elapsed.");
 		}
@@ -782,7 +783,7 @@ public class TaoClient implements Client {
 		for (Double l : sThroughputs) {
 			throughputTotal += l;
 		}
-		double averageThroughput = throughputTotal / (loadTestLength / 1000);
+		double averageThroughput = throughputTotal / ((loadTestEndTime - loadTestStartTime) / 1000);
 
 		TaoLogger.logForce("Ending load test");
 

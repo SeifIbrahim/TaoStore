@@ -64,6 +64,7 @@ class CockroachDao {
 		writeConfig.setAutoCommit(false);
 		writeConfig.setMaximumPoolSize(128);
 		writeConfig.setKeepaliveTime(150000);
+		writeConfig.setConnectionTimeout(180000);
 		writeDS = new HikariDataSource(writeConfig);
 
 		// connection pool for reading
@@ -75,6 +76,7 @@ class CockroachDao {
 		readConfig.setAutoCommit(false);
 		readConfig.setMaximumPoolSize(32);
 		readConfig.setKeepaliveTime(150000);
+		readConfig.setConnectionTimeout(180000);
 		readConfig.setReadOnly(true);
 		readDS = new HikariDataSource(readConfig);
 

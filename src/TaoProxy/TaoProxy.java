@@ -78,7 +78,7 @@ public class TaoProxy implements Proxy {
 	public TaoProxy(MessageCreator messageCreator, PathCreator pathCreator, Subtree subtree) {
 		try {
 			// For trace purposes
-			TaoLogger.logLevel = TaoLogger.LOG_INFO;
+			TaoLogger.logLevel = TaoLogger.LOG_OFF;
 
 			// For profiling purposes
 			mProfiler = new TaoProfiler();
@@ -371,7 +371,7 @@ public class TaoProxy implements Proxy {
 							@Override
 							public void completed(Integer result, Void attachment) {
 								// Make sure we read all the bytes
-								while (messageByteBuffer.remaining() > 0) {
+								if (messageByteBuffer.remaining() > 0) {
 									channel.read(messageByteBuffer, null, this);
 									return;
 								}
@@ -388,7 +388,7 @@ public class TaoProxy implements Proxy {
 								clientReq.initFromSerialized(requestBytes);
 								clientReq.setChannel(channel);
 
-								TaoLogger.logDebug("Proxy will handle client request #" + clientReq.getRequestID());
+								TaoLogger.logInfo("Proxy will handle client request #" + clientReq.getRequestID());
 
 								// When we receive a request, we first send it to the sequencer
 								mSequencer.onReceiveRequest(clientReq);
@@ -403,7 +403,7 @@ public class TaoProxy implements Proxy {
 
 							@Override
 							public void failed(Throwable exc, Void attachment) {
-								// TODO: implement?
+								TaoLogger.logForce("Failed to read a message");
 							}
 						});
 					} else if (messageType == MessageTypes.PRINT_SUBTREE) {

@@ -1261,4 +1261,28 @@ public class TaoProcessor implements Processor {
 			e.printStackTrace();
 		}
 	}
+
+	public void disconnectClient(InetSocketAddress addr) {
+		if (mProxyToServerChannelMap.containsKey(addr)) {
+			TaoLogger.logInfo("Removing client channels to server for client " + addr.toString());
+			for (Map.Entry<InetSocketAddress, AsynchronousSocketChannel> entry : mProxyToServerChannelMap.get(addr)
+					.entrySet()) {
+				try {
+					Semaphore lock = mAsyncProxyToServerSemaphoreMap.get(addr).get(entry.getKey());
+					lock.acquireUninterruptibly();
+					entry.getValue().close();
+					lock.release();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+			mProxyToServerChannelMap.remove(addr);
+			mAsyncProxyToServerSemaphoreMap.remove(addr);
+		}
+		else {
+			TaoLogger.logInfo("Client " + addr.toString() + " wasn't found in channel map");
+			TaoLogger.logInfo(mProxyToServerChannelMap.keySet().toString());
+		}
+	}
+
 }

@@ -97,7 +97,7 @@ public class TaoClient implements Client {
 		try {
 			// Initialize needed constants
 			TaoConfigs.initConfiguration();
-			
+
 			TaoLogger.logLevel = TaoLogger.LOG_OFF;
 
 			mClientID = sNextClientID.getAndAdd(1);
@@ -701,21 +701,27 @@ public class TaoClient implements Client {
 				targetBlock = zipf.sample();
 
 				if (readOrWrite < rwRatio) {
-					TaoLogger.logInfo("Doing read request #" + ((TaoClient) client).mRequestID.get() + " for block " + targetBlock);
+					TaoLogger.logInfo("Doing read request #" + ((TaoClient) client).mRequestID.get() + " for block "
+							+ targetBlock);
 
 					// Send read and keep track of response time
 					long start = System.currentTimeMillis();
 					client.read(targetBlock);
-					sResponseTimes.add(System.currentTimeMillis() - start);
+					synchronized (sResponseTimes) {
+						sResponseTimes.add(System.currentTimeMillis() - start);
+					}
 				} else {
-					TaoLogger.logInfo("Doing write request #" + ((TaoClient) client).mRequestID.get() + " for block " + targetBlock);
+					TaoLogger.logInfo("Doing write request #" + ((TaoClient) client).mRequestID.get() + " for block "
+							+ targetBlock);
 
 					// Send write and keep track of response time
 					byte[] dataToWrite = new byte[TaoConfigs.BLOCK_SIZE];
 					Arrays.fill(dataToWrite, (byte) targetBlock);
 					long start = System.currentTimeMillis();
 					writeStatus = client.write(targetBlock, dataToWrite);
-					sResponseTimes.add(System.currentTimeMillis() - start);
+					synchronized (sResponseTimes) {
+						sResponseTimes.add(System.currentTimeMillis() - start);
+					}
 
 					if (!writeStatus) {
 						TaoLogger.logForce("Write failed for block " + targetBlock);
@@ -778,6 +784,9 @@ public class TaoClient implements Client {
 		if (!terminated) {
 			TaoLogger.logForce("Clients did not terminate before the timeout elapsed.");
 		}
+
+		TaoLogger.logForce("Throughputs: " + sThroughputs.toString());
+		TaoLogger.logForce("Response times: " + sResponseTimes.toString());
 
 		double throughputTotal = 0;
 		for (Double l : sThroughputs) {

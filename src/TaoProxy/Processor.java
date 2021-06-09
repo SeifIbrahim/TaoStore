@@ -1,5 +1,7 @@
 package TaoProxy;
 
+import java.nio.channels.AsynchronousSocketChannel;
+
 import Messages.ClientRequest;
 import Messages.ServerResponse;
 
@@ -32,4 +34,6 @@ public interface Processor {
      * @param timeStamp
      */
     void writeBack(long timeStamp);
+
+	void disconnectClient(AsynchronousSocketChannel channel);
 }

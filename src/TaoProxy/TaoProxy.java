@@ -350,6 +350,9 @@ public class TaoProxy implements Proxy {
 					} catch (BufferUnderflowException e) {
 						TaoLogger.logForce("Lost connection to client");
 						try {
+							// apparently the processor holds a channel open to the server for each client
+							// so we need to close those too
+							mProcessor.disconnectClient(channel);
 							channel.close();
 						} catch (IOException e1) {
 							e1.printStackTrace();

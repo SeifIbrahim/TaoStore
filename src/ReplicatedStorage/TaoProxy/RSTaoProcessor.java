@@ -69,7 +69,7 @@ public class RSTaoProcessor extends TaoProcessor {
      * @brief Private helper method to make a map of server addresses to channels for addr
      */
     @Override
-    protected void makeInitialConnections(InetSocketAddress addr) {
+    protected void makeInitialConnections(AsynchronousSocketChannel addr) {
 
 
 
@@ -242,7 +242,7 @@ public class RSTaoProcessor extends TaoProcessor {
             // If this is there first time the client has connected, the map may not have been made yet
             if (mChannelMap == null) {
                 TaoLogger.logInfo("Going to make the initial connections for " + req.getClientAddress().getHostName());
-                makeInitialConnections(req.getClientAddress());
+                makeInitialConnections(req.getChannel());
             }
 
             // Get it once more in case it was null the first time
@@ -251,7 +251,7 @@ public class RSTaoProcessor extends TaoProcessor {
             // Do this to make sure we wait until connections are made if this is one of the first requests made by this
             // particular client
             if (mChannelMap.size() < TaoConfigs.PARTITION_SERVERS.size()) {
-                makeInitialConnections(req.getClientAddress());
+                makeInitialConnections(req.getChannel());
             }
 
             // Get a quorum of server InetSocketAddress that we want to connect to

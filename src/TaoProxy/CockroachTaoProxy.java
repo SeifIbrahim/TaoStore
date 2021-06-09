@@ -4,10 +4,14 @@ import java.nio.channels.AsynchronousChannelGroup;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingDeque;
 
 import Configuration.ArgumentParser;
 import Configuration.TaoConfigs;
+import Messages.ClientRequest;
 import Messages.MessageCreator;
 
 /**
@@ -16,6 +20,8 @@ import Messages.MessageCreator;
 public class CockroachTaoProxy extends TaoProxy {
 
 	private CockroachDao cockroachDao;
+	private BlockingQueue<ClientRequest> requestQueue;
+	private ExecutorService requestExecutor;
 
 	/**
 	 * @param messageCreator
@@ -60,6 +66,9 @@ public class CockroachTaoProxy extends TaoProxy {
 		mSequencer = new TaoSequencer(mMessageCreator, mPathCreator);
 		mProcessor = new CockroachTaoProcessor(this, mSequencer, mThreadGroup, mMessageCreator, mPathCreator,
 				mCryptoUtil, mSubtree, mPositionMap, mRelativeLeafMapper, mProfiler);
+
+		requestQueue = new LinkedBlockingDeque<>();
+		requestExecutor = Executors.newFixedThreadPool(TaoConfigs.CONNECTION_POOL_SIZE);
 	}
 
 	/**
@@ -95,6 +104,27 @@ public class CockroachTaoProxy extends TaoProxy {
 		}
 	}
 
+	@Override
+	public void onReceiveRequest(ClientRequest req) {
+		try {
+			requestQueue.put(req);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+	}
+
+	private void processRequests() {
+		try {
+			while (true) {
+				ClientRequest req;
+				req = requestQueue.take();
+				requestExecutor.submit(() -> mProcessor.readPath(req));
+			}
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+	}
+
 	public static void main(String[] args) {
 		try {
 			// Parse any passed in args
@@ -112,6 +142,9 @@ public class CockroachTaoProxy extends TaoProxy {
 			// Initialize and run server
 			proxy.initializeServer();
 			TaoLogger.logForce("Finished init, running proxy");
+			// launch the consumer thread
+			new Thread(() -> proxy.processRequests()).start();
+			// launch the producer thread
 			proxy.run();
 		} catch (Exception e) {
 			e.printStackTrace();

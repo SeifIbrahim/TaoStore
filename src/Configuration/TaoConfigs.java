@@ -80,6 +80,8 @@ public class TaoConfigs {
     
     public static int MAX_CLIENT_ID;
 
+    public static int CONNECTION_POOL_SIZE;
+
     // We only want to initialize constants once per run
     public static AtomicBoolean mHasBeenInitialized = new AtomicBoolean();
 
@@ -146,6 +148,9 @@ public class TaoConfigs {
                 
                 String max_client_id = properties.getProperty("max_client_id");
                 MAX_CLIENT_ID = Integer.parseInt(max_client_id);
+
+                String connection_pool_size = properties.getProperty("connection_pool_size");
+                CONNECTION_POOL_SIZE = Integer.parseInt(connection_pool_size);
 
                 // Assign server port number
                 String server_port = properties.getProperty("server_port");

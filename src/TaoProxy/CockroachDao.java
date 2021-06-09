@@ -62,7 +62,7 @@ class CockroachDao {
 		writeConfig.setPassword("seif");
 		writeConfig.addDataSourceProperty("reWriteBatchedInserts", "true");
 		writeConfig.setAutoCommit(false);
-		writeConfig.setMaximumPoolSize(128);
+		writeConfig.setMaximumPoolSize(TaoConfigs.CONNECTION_POOL_SIZE);
 		writeConfig.setKeepaliveTime(150000);
 		writeConfig.setConnectionTimeout(180000);
 		writeDS = new HikariDataSource(writeConfig);

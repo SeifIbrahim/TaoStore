@@ -47,3 +47,6 @@ storage_hostname1=127.0.0.1
 
 # The maximum client ID (same as the maximum number of clients)
 max_client_id = 90
+
+# Size of the hikaricp connection pool for cockroachDB
+connection_pool_size = 128

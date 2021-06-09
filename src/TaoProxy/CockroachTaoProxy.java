@@ -20,8 +20,6 @@ import Messages.MessageCreator;
 public class CockroachTaoProxy extends TaoProxy {
 
 	private CockroachDao cockroachDao;
-	private BlockingQueue<ClientRequest> requestQueue;
-	private ExecutorService requestExecutor;
 
 	/**
 	 * @param messageCreator
